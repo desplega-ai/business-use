@@ -1,0 +1,10 @@
+Generic single-database configuration with async support for SQLite.
+
+To create a new migration:
+    cli db revision --autogenerate -m "description of changes"
+
+To apply migrations:
+    cli db upgrade
+
+To revert migrations:
+    cli db downgrade
