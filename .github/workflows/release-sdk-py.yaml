@@ -73,8 +73,7 @@ jobs:
 
       - name: Update version in files
         run: |
-          sed -i "s/version = \".*\"/version = \"${{ steps.get_version.outputs.version }}\"/" pyproject.toml
-          sed -i "s/__version__ = \".*\"/__version__ = \"${{ steps.get_version.outputs.version }}\"/" src/business_use/__init__.py
+          sed -i "0,/^version = /s/^version = \".*\"/version = \"${{ steps.get_version.outputs.version }}\"/" pyproject.toml
 
       - name: Build package
         run: python -m build

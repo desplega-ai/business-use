@@ -73,7 +73,7 @@ jobs:
 
       - name: Update version in files
         run: |
-          sed -i "s/version = \".*\"/version = \"${{ steps.get_version.outputs.version }}\"/" pyproject.toml
+          sed -i "0,/^version = /s/^version = \".*\"/version = \"${{ steps.get_version.outputs.version }}\"/" pyproject.toml
 
       - name: Run format check
         run: uv run ruff format --check src/
