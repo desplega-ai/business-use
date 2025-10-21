@@ -9,10 +9,13 @@ import type { NodeCondition, NodeType, QueuedEvent } from './models.js';
  * Logger utility
  */
 const log = {
-  debug: (msg: string) => console.log(`[business-use] [${new Date().toISOString()}] [DEBUG] ${msg}`),
+  debug: (msg: string) =>
+    console.log(`[business-use] [${new Date().toISOString()}] [DEBUG] ${msg}`),
   info: (msg: string) => console.log(`[business-use] [${new Date().toISOString()}] [INFO] ${msg}`),
-  warn: (msg: string) => console.warn(`[business-use] [${new Date().toISOString()}] [WARNING] ${msg}`),
-  error: (msg: string) => console.error(`[business-use] [${new Date().toISOString()}] [ERROR] ${msg}`),
+  warn: (msg: string) =>
+    console.warn(`[business-use] [${new Date().toISOString()}] [WARNING] ${msg}`),
+  error: (msg: string) =>
+    console.error(`[business-use] [${new Date().toISOString()}] [ERROR] ${msg}`),
 };
 
 /**
@@ -263,12 +266,20 @@ function _enqueueEvent<TData extends Record<string, any>>(options: {
       return;
     }
 
-    if (options.filter !== undefined && typeof options.filter === 'function' && isAsyncFunction(options.filter)) {
+    if (
+      options.filter !== undefined &&
+      typeof options.filter === 'function' &&
+      isAsyncFunction(options.filter)
+    ) {
       log.error(`Event ${options.id}: filter cannot be an async function`);
       return;
     }
 
-    if (options.depIds !== undefined && typeof options.depIds === 'function' && isAsyncFunction(options.depIds)) {
+    if (
+      options.depIds !== undefined &&
+      typeof options.depIds === 'function' &&
+      isAsyncFunction(options.depIds)
+    ) {
       log.error(`Event ${options.id}: depIds cannot be an async function`);
       return;
     }
@@ -278,7 +289,11 @@ function _enqueueEvent<TData extends Record<string, any>>(options: {
       return;
     }
 
-    if (options.conditions !== undefined && typeof options.conditions === 'function' && isAsyncFunction(options.conditions)) {
+    if (
+      options.conditions !== undefined &&
+      typeof options.conditions === 'function' &&
+      isAsyncFunction(options.conditions)
+    ) {
       log.error(`Event ${options.id}: conditions cannot be an async function`);
       return;
     }
@@ -292,7 +307,9 @@ function _enqueueEvent<TData extends Record<string, any>>(options: {
       filter: options.filter as boolean | ((data: Record<string, any>) => boolean) | undefined,
       dep_ids: options.depIds,
       description: options.description,
-      validator: options.validator as ((data: Record<string, any>, ctx: Record<string, any>) => boolean) | undefined,
+      validator: options.validator as
+        | ((data: Record<string, any>, ctx: Record<string, any>) => boolean)
+        | undefined,
       conditions: options.conditions,
       additional_meta: options.additional_meta,
     };

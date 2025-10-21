@@ -284,7 +284,9 @@ class BatchProcessor:
                     if not in_docstring:
                         # Check if this line starts a docstring
                         if stripped.startswith('"""') or stripped.startswith("'''"):
-                            docstring_delim = '"""' if stripped.startswith('"""') else "'''"
+                            docstring_delim = (
+                                '"""' if stripped.startswith('"""') else "'''"
+                            )
                             in_docstring = True
                             # Check if it's a single-line docstring
                             if stripped.count(docstring_delim) >= 2:

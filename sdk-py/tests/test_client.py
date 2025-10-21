@@ -1,10 +1,7 @@
 """Tests for client module."""
 
 import logging
-import time
 from unittest import mock
-
-import pytest
 
 from business_use import act, assert_, initialize, shutdown
 from business_use.client import _state
@@ -51,7 +48,9 @@ class TestAsyncFunctionRejection:
 
         # Check that an error was logged
         error_logs = [r for r in self.log_records if r.levelname == "ERROR"]
-        assert any("run_id cannot be an async function" in r.message for r in error_logs)
+        assert any(
+            "run_id cannot be an async function" in r.message for r in error_logs
+        )
 
     def test_async_filter_rejected(self):
         """Test that async filter is rejected."""
@@ -69,7 +68,9 @@ class TestAsyncFunctionRejection:
 
         # Check that an error was logged
         error_logs = [r for r in self.log_records if r.levelname == "ERROR"]
-        assert any("filter cannot be an async function" in r.message for r in error_logs)
+        assert any(
+            "filter cannot be an async function" in r.message for r in error_logs
+        )
 
     def test_async_dep_ids_rejected(self):
         """Test that async dep_ids is rejected."""
@@ -87,7 +88,9 @@ class TestAsyncFunctionRejection:
 
         # Check that an error was logged
         error_logs = [r for r in self.log_records if r.levelname == "ERROR"]
-        assert any("dep_ids cannot be an async function" in r.message for r in error_logs)
+        assert any(
+            "dep_ids cannot be an async function" in r.message for r in error_logs
+        )
 
     def test_async_validator_rejected(self):
         """Test that async validator is rejected."""
@@ -111,9 +114,6 @@ class TestAsyncFunctionRejection:
 
     def test_sync_functions_accepted(self):
         """Test that sync functions are accepted (no errors logged)."""
-        initial_error_count = len(
-            [r for r in self.log_records if r.levelname == "ERROR"]
-        )
 
         def sync_run_id():
             return "run_123"
@@ -144,15 +144,9 @@ class TestAsyncFunctionRejection:
             validator=sync_validator,
         )
 
-        # No additional errors should be logged
-        final_error_count = len(
-            [r for r in self.log_records if r.levelname == "ERROR"]
-        )
         # May have connection errors, but no "cannot be async" errors
         async_errors = [
-            r
-            for r in self.log_records
-            if "cannot be an async function" in r.message
+            r for r in self.log_records if "cannot be an async function" in r.message
         ]
         assert len(async_errors) == 0
 

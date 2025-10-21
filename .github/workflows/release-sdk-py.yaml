@@ -1,0 +1,98 @@
+name: Release Python SDK
+
+on:
+  push:
+    tags:
+      - 'sdk-py-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  release:
+    name: Release Python SDK to PyPI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk-py
+    permissions:
+      contents: write
+      id-token: write  # Required for trusted publishing to PyPI
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install build tools
+        run: uv pip install --system build twine
+
+      - name: Get version from tag or determine from bump
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Triggered by tag push - extract version from tag
+            VERSION=${GITHUB_REF#refs/tags/sdk-py-v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "source=tag" >> $GITHUB_OUTPUT
+          else
+            # Triggered manually - calculate new version
+            CURRENT=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+            IFS='.' read -r major minor patch <<< "$CURRENT"
+
+            case "${{ github.event.inputs.version }}" in
+              major)
+                VERSION="$((major + 1)).0.0"
+                ;;
+              minor)
+                VERSION="${major}.$((minor + 1)).0"
+                ;;
+              patch)
+                VERSION="${major}.${minor}.$((patch + 1))"
+                ;;
+            esac
+
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "source=manual" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update version in files
+        run: |
+          sed -i "s/version = \".*\"/version = \"${{ steps.get_version.outputs.version }}\"/" pyproject.toml
+          sed -i "s/__version__ = \".*\"/__version__ = \"${{ steps.get_version.outputs.version }}\"/" src/business_use/__init__.py
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check package
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk-py/dist/
+
+      - name: Commit version bump and create tag
+        if: steps.get_version.outputs.source == 'manual'
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add pyproject.toml src/business_use/__init__.py
+          git commit -m "chore(sdk-py): release v${{ steps.get_version.outputs.version }}"
+          git tag "sdk-py-v${{ steps.get_version.outputs.version }}"
+          git push origin main --tags

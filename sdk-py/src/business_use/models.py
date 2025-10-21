@@ -1,9 +1,9 @@
 """Internal models for Business-Use SDK."""
 
-from typing import Any, Callable, Literal
+from collections.abc import Callable
+from typing import Any, Literal
 
 from pydantic import BaseModel
-
 
 NodeType = Literal["act", "assert", "generic", "trigger", "hook"]
 ExprEngine = Literal["python", "js", "cel"]

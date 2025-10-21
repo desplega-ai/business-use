@@ -117,8 +117,8 @@ async def persist_events_batch(
                     dep_ids=item.dep_ids or [],
                     validator=item.validator,
                     filter=item.filter,
-                    conditions=item.conditions or [],
-                    additional_meta=item.additional_meta,
+                    conditions=[],
+                    additional_meta=None,
                     created_at=now(),
                 )
             )

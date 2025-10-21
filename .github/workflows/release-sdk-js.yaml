@@ -1,0 +1,97 @@
+name: Release JavaScript SDK
+
+on:
+  push:
+    tags:
+      - 'sdk-js-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  release:
+    name: Release JavaScript SDK to npm
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk-js
+    permissions:
+      contents: write
+      id-token: write  # Required for provenance
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+          cache-dependency-path: './sdk-js/pnpm-lock.yaml'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Get version from tag or determine from bump
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Triggered by tag push - extract version from tag
+            VERSION=${GITHUB_REF#refs/tags/sdk-js-v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "source=tag" >> $GITHUB_OUTPUT
+          else
+            # Triggered manually - calculate new version using pnpm
+            pnpm version ${{ github.event.inputs.version }} --no-git-tag-version
+            VERSION=$(node -p "require('./package.json').version")
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "source=manual" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update version in files
+        run: |
+          # Update package.json if needed (for tag-triggered builds)
+          if [ "${{ steps.get_version.outputs.source }}" = "tag" ]; then
+            npm version ${{ steps.get_version.outputs.version }} --no-git-tag-version --allow-same-version
+          fi
+          # Update version in src/index.ts
+          sed -i "s/export const version = '.*'/export const version = '${{ steps.get_version.outputs.version }}'/" src/index.ts
+
+      - name: Build package
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm run test:run
+
+      - name: Type check
+        run: pnpm run typecheck
+
+      - name: Publish to npm
+        run: pnpm publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit version bump and create tag
+        if: steps.get_version.outputs.source == 'manual'
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add package.json src/index.ts
+          git commit -m "chore(sdk-js): release v${{ steps.get_version.outputs.version }}"
+          git tag "sdk-js-v${{ steps.get_version.outputs.version }}"
+          git push origin main --tags

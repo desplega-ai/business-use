@@ -8,10 +8,13 @@ import type { EventBatchItem, Expr, QueuedEvent } from './models.js';
  * Logger utility
  */
 const log = {
-  debug: (msg: string) => console.log(`[business-use] [${new Date().toISOString()}] [DEBUG] ${msg}`),
+  debug: (msg: string) =>
+    console.log(`[business-use] [${new Date().toISOString()}] [DEBUG] ${msg}`),
   info: (msg: string) => console.log(`[business-use] [${new Date().toISOString()}] [INFO] ${msg}`),
-  warn: (msg: string) => console.warn(`[business-use] [${new Date().toISOString()}] [WARNING] ${msg}`),
-  error: (msg: string) => console.error(`[business-use] [${new Date().toISOString()}] [ERROR] ${msg}`),
+  warn: (msg: string) =>
+    console.warn(`[business-use] [${new Date().toISOString()}] [WARNING] ${msg}`),
+  error: (msg: string) =>
+    console.error(`[business-use] [${new Date().toISOString()}] [ERROR] ${msg}`),
 };
 
 /**
@@ -194,7 +197,8 @@ export class BatchProcessor {
         try {
           // Evaluate filter first - skip if False (client-side filtering)
           if (event.filter !== undefined) {
-            const filterResult = typeof event.filter === 'function' ? event.filter(event.data) : event.filter;
+            const filterResult =
+              typeof event.filter === 'function' ? event.filter(event.data) : event.filter;
             if (!filterResult) {
               log.debug(`Event ${event.id} filtered out`);
               continue;
@@ -203,12 +207,18 @@ export class BatchProcessor {
 
           // Evaluate lambdas
           const runId = typeof event.run_id === 'function' ? event.run_id() : event.run_id;
-          const depIds = event.dep_ids !== undefined
-            ? typeof event.dep_ids === 'function' ? event.dep_ids() : event.dep_ids
-            : undefined;
-          const conditions = event.conditions !== undefined
-            ? typeof event.conditions === 'function' ? event.conditions() : event.conditions
-            : undefined;
+          const depIds =
+            event.dep_ids !== undefined
+              ? typeof event.dep_ids === 'function'
+                ? event.dep_ids()
+                : event.dep_ids
+              : undefined;
+          const conditions =
+            event.conditions !== undefined
+              ? typeof event.conditions === 'function'
+                ? event.conditions()
+                : event.conditions
+              : undefined;
 
           // Serialize filter if present and callable (send to backend)
           const filterExpr: Expr | undefined =
@@ -218,9 +228,7 @@ export class BatchProcessor {
 
           // Serialize validator if present
           const validatorExpr: Expr | undefined =
-            event.validator !== undefined
-              ? this._serializeFunction(event.validator)
-              : undefined;
+            event.validator !== undefined ? this._serializeFunction(event.validator) : undefined;
 
           // Create batch item
           const item: EventBatchItem = {
@@ -263,7 +271,7 @@ export class BatchProcessor {
   private async _postBatch(items: EventBatchItem[]): Promise<void> {
     try {
       // Remove undefined fields from items
-      const payload = items.map(item => {
+      const payload = items.map((item) => {
         const cleaned: any = {};
         for (const [key, value] of Object.entries(item)) {
           if (value !== undefined) {

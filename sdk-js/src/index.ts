@@ -36,6 +36,13 @@
  */
 
 export { initialize, ensure, shutdown } from './client.js';
-export type { NodeType, ExprEngine, Expr, EventBatchItem, QueuedEvent, NodeCondition } from './models.js';
+export type {
+  NodeType,
+  ExprEngine,
+  Expr,
+  EventBatchItem,
+  QueuedEvent,
+  NodeCondition,
+} from './models.js';
 
 export const version = '0.1.0';
