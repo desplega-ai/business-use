@@ -218,6 +218,110 @@ def shutdown(timeout: float = 5.0) -> None:
         logger.info("SDK shutdown complete")
 
 
+def act(
+    id: str,
+    flow: str,
+    run_id: str | Callable[[], str],
+    data: dict[str, Any],
+    *,
+    filter: bool | Callable[[], bool] | None = None,
+    dep_ids: list[str] | Callable[[], list[str]] | None = None,
+    description: str | None = None,
+    conditions: list[NodeCondition] | Callable[[], list[NodeCondition]] | None = None,
+    additional_meta: dict[str, Any] | None = None,
+) -> None:
+    """Helper function to track an action (event without validator).
+
+    This is a convenience wrapper around `ensure()` without a validator.
+
+    Args:
+        id: Unique identifier for this event
+        flow: Flow identifier
+        run_id: Run identifier or lambda that returns one
+        data: Event data payload
+        filter: Optional filter function to decide if event should be tracked
+        dep_ids: Optional list of dependency IDs or lambda that returns them
+        description: Optional human-readable description
+        conditions: Optional list of conditions or lambda that returns them
+        additional_meta: Optional additional metadata
+
+    Example:
+        >>> act(
+        ...     id="payment_processed",
+        ...     flow="checkout",
+        ...     run_id="run_123",
+        ...     data={"amount": 100, "currency": "USD"}
+        ... )
+    """
+    ensure(
+        id=id,
+        flow=flow,
+        run_id=run_id,
+        data=data,
+        filter=filter,
+        dep_ids=dep_ids,
+        description=description,
+        conditions=conditions,
+        additional_meta=additional_meta,
+    )
+
+
+def assert_(
+    id: str,
+    flow: str,
+    run_id: str | Callable[[], str],
+    data: dict[str, Any],
+    *,
+    validator: Callable[[dict[str, Any], dict[str, Any]], bool] | None = None,
+    filter: bool | Callable[[], bool] | None = None,
+    dep_ids: list[str] | Callable[[], list[str]] | None = None,
+    description: str | None = None,
+    conditions: list[NodeCondition] | Callable[[], list[NodeCondition]] | None = None,
+    additional_meta: dict[str, Any] | None = None,
+) -> None:
+    """Helper function to track an assertion (event with validator).
+
+    This is a convenience wrapper around `ensure()` with a validator.
+    Named `assert_` to avoid conflict with Python's built-in `assert` keyword.
+
+    Args:
+        id: Unique identifier for this event
+        flow: Flow identifier
+        run_id: Run identifier or lambda that returns one
+        data: Event data payload
+        validator: Optional validation function
+        filter: Optional filter function to decide if event should be tracked
+        dep_ids: Optional list of dependency IDs or lambda that returns them
+        description: Optional human-readable description
+        conditions: Optional list of conditions or lambda that returns them
+        additional_meta: Optional additional metadata
+
+    Example:
+        >>> def validate_total(data, ctx):
+        ...     return data["total"] > 0
+        >>>
+        >>> assert_(
+        ...     id="order_total_valid",
+        ...     flow="checkout",
+        ...     run_id="run_123",
+        ...     data={"total": 150},
+        ...     validator=validate_total
+        ... )
+    """
+    ensure(
+        id=id,
+        flow=flow,
+        run_id=run_id,
+        data=data,
+        validator=validator,
+        filter=filter,
+        dep_ids=dep_ids,
+        description=description,
+        conditions=conditions,
+        additional_meta=additional_meta,
+    )
+
+
 def _enqueue_event(
     type: NodeType,
     id: str,

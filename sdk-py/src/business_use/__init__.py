@@ -32,7 +32,7 @@ Example:
 import logging
 from importlib.metadata import version
 
-from .client import ensure, initialize, shutdown
+from .client import act, assert_, ensure, initialize, shutdown
 from .models import NodeCondition
 
 try:
@@ -44,6 +44,8 @@ __all__ = [
     "initialize",
     "ensure",
     "shutdown",
+    "act",
+    "assert_",
     "NodeCondition",
 ]
 

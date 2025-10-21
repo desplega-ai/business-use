@@ -239,6 +239,39 @@ export async function shutdown(timeout: number = 5000): Promise<void> {
 }
 
 /**
+ * Helper function to track an action (event without validator).
+ * This is a convenience wrapper around `ensure()` without a validator.
+ */
+export function act<TData extends Record<string, any> = Record<string, any>>(options: {
+  id: string;
+  flow: string;
+  runId: string | (() => string);
+  data: TData;
+  depIds?: string[] | (() => string[]);
+  filter?: (data: TData) => boolean;
+  timeoutMs?: number;
+}): void {
+  ensure(options);
+}
+
+/**
+ * Helper function to track an assertion (event with validator).
+ * This is a convenience wrapper around `ensure()` with a validator.
+ */
+export function assert<TData extends Record<string, any> = Record<string, any>>(options: {
+  id: string;
+  flow: string;
+  runId: string | (() => string);
+  data: TData;
+  validator?: (data: TData, ctx: Record<string, any>) => boolean;
+  depIds?: string[] | (() => string[]);
+  filter?: (data: TData) => boolean;
+  timeoutMs?: number;
+}): void {
+  ensure(options);
+}
+
+/**
  * Internal helper to enqueue an event.
  */
 function _enqueueEvent<TData extends Record<string, any>>(options: {

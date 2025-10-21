@@ -35,7 +35,7 @@
  * @module business-use
  */
 
-export { initialize, ensure, shutdown } from './client.js';
+export { initialize, ensure, shutdown, act, assert } from './client.js';
 export type {
   NodeType,
   ExprEngine,
