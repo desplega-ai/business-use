@@ -1,7 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
 from typing import Annotated
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,16 +9,16 @@ from sqlmodel import select
 
 from src.api.middlewares import ensure_api_key
 from src.api.models import (
-    DefinitionCreateSchema,
-    DefinitionUpdateSchema,
     EvalInput,
+    NodeCreateSchema,
+    NodeUpdateSchema,
     SuccessResponse,
 )
 from src.db.transactional import transactional
 from src.models import (
-    Definition,
     EvalOutput,
     Event,
+    Node,
 )
 from src.utils import now
 
@@ -29,24 +28,19 @@ router = APIRouter(
 )
 
 
-@router.get("/health")
-async def health():
-    return SuccessResponse(message="API is healthy")
-
-
 @router.get("/check")
 async def check(_: Annotated[None, Depends(ensure_api_key)]):
     return SuccessResponse(
-        message="API key is valid",
+        message="lgtm",
     )
 
 
-@router.get("/definitions")
-async def get_definitions(_: Annotated[None, Depends(ensure_api_key)]):
+@router.get("/nodes")
+async def get_nodes(_: Annotated[None, Depends(ensure_api_key)]):
     async with transactional() as s:
         defs = await s.execute(
-            select(Definition).where(
-                Definition.deleted_at.is_(None),  # type: ignore
+            select(Node).where(
+                Node.deleted_at.is_(None),  # type: ignore
             )
         )
 
@@ -55,8 +49,8 @@ async def get_definitions(_: Annotated[None, Depends(ensure_api_key)]):
     return defs
 
 
-@router.get("/outputs")
-async def get_outputs(
+@router.get("/eval-outputs")
+async def get_eval_outputs(
     _: Annotated[None, Depends(ensure_api_key)],
     name: Annotated[list[str] | None, Query()] = None,
     ev_id: str | None = None,
@@ -67,7 +61,7 @@ async def get_outputs(
         _s = select(EvalOutput)
 
         if name:
-            _s = _s.where(EvalOutput.name.in_(name))  # type: ignore
+            _s = _s.where(EvalOutput.flow.in_(name))  # type: ignore
 
         if ev_id:
             _s = _s.where(EvalOutput.trigger_ev_id == ev_id)
@@ -89,19 +83,19 @@ async def get_outputs(
 @router.get("/events")
 async def get_events(
     _: Annotated[None, Depends(ensure_api_key)],
-    name: str | None = None,
-    x_id: str | None = None,
+    flow: str | None = None,
+    node_id: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ):
     async with transactional() as s:
         _s = select(Event)
 
-        if name:
-            _s = _s.where(Event.name == name)
+        if flow:
+            _s = _s.where(Event.flow == flow)
 
-        if x_id:
-            _s = _s.where(Event.x_id == x_id)
+        if node_id:
+            _s = _s.where(Event.node_id == node_id)
 
         _s = (
             _s.offset(offset)
@@ -118,7 +112,7 @@ async def get_events(
     return evs
 
 
-@router.post("/evaluate")
+@router.post("/eval")
 async def perform_eval(
     _: Annotated[None, Depends(ensure_api_key)],
     body: EvalInput,
@@ -126,32 +120,23 @@ async def perform_eval(
     raise NotImplementedError("Evaluation endpoint not implemented yet")
 
 
-@router.post("/definitions")
-async def create_definition(
+@router.post("/node")
+async def create_node(
     _: Annotated[None, Depends(ensure_api_key)],
-    body: DefinitionCreateSchema,
+    body: NodeCreateSchema,
 ):
     async with transactional() as s:
-        # Check for existing definition with same name and x_id
-        existing_md = await s.execute(
-            select(Definition).where(
-                Definition.name == body.name,
-                Definition.x_id == body.x_id,
-            )
-        )
+        existing_md = await s.get(Node, body.id)
 
-        existing_md = existing_md.scalars().first()
-
-        if existing_md and existing_md.deleted_at is None:
+        if existing_md and existing_md.flow == body.flow:
             raise HTTPException(
                 status_code=400,
-                detail="Definition with the same name and x_id already exists",
+                detail="Node with the same name and id already exists",
             )
 
-        md = Definition(
-            name=body.name,
-            id=str(uuid4()),
-            x_id=body.x_id,
+        md = Node(
+            flow=body.flow,
+            id=body.id,
             type=body.type,
             created_at=now(),
             status="active",
@@ -166,9 +151,10 @@ async def create_definition(
 
         if existing_md:
             md.created_at = existing_md.created_at
+
+            # Revive the node if it was deleted
             md.deleted_at = None
             md.updated_at = now()
-            md.id = existing_md.id
 
             await s.merge(md)
 
@@ -178,17 +164,17 @@ async def create_definition(
     return md
 
 
-@router.put("/definitions/{definition_id}")
-async def update_definition(
-    definition_id: str,
+@router.put("/node/{node_id}")
+async def update_node(
+    node_id: str,
     _: Annotated[None, Depends(ensure_api_key)],
-    body: DefinitionUpdateSchema,
+    body: NodeUpdateSchema,
 ):
     async with transactional() as s:
-        md = await s.get(Definition, definition_id)
+        md = await s.get(Node, node_id)
 
         if not md:
-            raise HTTPException(status_code=404, detail="Definition not found")
+            raise HTTPException(status_code=404, detail="Node not found")
 
         if md.deleted_at is not None:
             md.deleted_at = None
@@ -210,16 +196,16 @@ async def update_definition(
     return md
 
 
-@router.delete("/definitions/{definition_id}")
+@router.delete("/node/{node_id}")
 async def delete_definition(
-    definition_id: str,
+    node_id: str,
     _: Annotated[None, Depends(ensure_api_key)],
 ):
     async with transactional() as s:
-        md = await s.get(Definition, definition_id)
+        md = await s.get(Node, node_id)
 
         if not md:
-            raise HTTPException(status_code=404, detail="Definition not found")
+            raise HTTPException(status_code=404, detail="Node not found")
 
         if md.source == "code":
             raise HTTPException(
@@ -232,7 +218,7 @@ async def delete_definition(
 
         await s.merge(md)
 
-    return SuccessResponse(message="Definition deleted")
+    return SuccessResponse(message="Node deleted")
 
 
 @asynccontextmanager
@@ -261,3 +247,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(router)
+
+
+@app.get("/health")
+async def health():
+    return SuccessResponse(message="API is healthy")

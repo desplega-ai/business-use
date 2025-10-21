@@ -4,9 +4,9 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from src.models import (
-    DefinitionCondition,
-    Handler,
-    HandlerInput,
+    ActionInput,
+    ActionType,
+    NodeCondition,
 )
 
 
@@ -18,31 +18,32 @@ class SuccessResponse(BaseModel):
     timestamp: datetime = datetime.now(UTC)
 
 
-class DefinitionBaseSchema(BaseModel):
+class NodeBaseSchema(BaseModel):
     description: str | None = None
 
-    conditions: list[DefinitionCondition] | None = None
+    conditions: list[NodeCondition] | None = None
     dep_ids: list[str] | None = None
 
     filter: str | None = None
     validator: str | None = None
 
-    handler: Handler | None = None
-    handler_input: HandlerInput | None = None
+    handler: ActionType | None = None
+    handler_input: ActionInput | None = None
 
     additional_meta: dict[str, Any] | None = None
 
 
-class DefinitionCreateSchema(DefinitionBaseSchema):
-    name: str
-    x_id: str
+class NodeCreateSchema(NodeBaseSchema):
+    flow: str
+    id: str
 
+    # Sub-set of the type as assert and act
+    # should only be defined in code-defined nodes
     type: Literal["generic", "trigger", "hook"]
 
 
-class DefinitionUpdateSchema(DefinitionBaseSchema):
-    name: str | None = None
-    x_id: str | None = None
+class NodeUpdateSchema(NodeBaseSchema):
+    flow: str | None = None
 
     type: Literal["generic", "trigger", "hook"] | None = None
 

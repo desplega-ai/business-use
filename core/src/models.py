@@ -13,7 +13,7 @@ Status = Literal[
     "deleted",
 ]
 
-RunStatus = Literal[
+EvalStatus = Literal[
     "pending",
     "running",
     "passed",
@@ -42,7 +42,7 @@ class CoreEnum(str, Enum):
         return str.__str__(self)
 
 
-DefinitionType = Literal[
+NodeType = Literal[
     "generic",
     "trigger",
     "act",
@@ -50,19 +50,20 @@ DefinitionType = Literal[
     "hook",
 ]
 
-DefinitionSource = Literal[
+NodeSource = Literal[
     "code",
     "manual",
 ]
 
-Handler = Literal[
+ActionType = Literal[
     "http_request",
     "test_run",
     "test_suite_run",
+    "command",
 ]
 
 
-class HandlerInputParams(BaseModel):
+class ActionInputParams(BaseModel):
     url: str | None = None
     method: Literal["GET", "POST", "PUT", "DELETE", "PATCH"] | None = None
     headers: dict[str, str] | None = None
@@ -72,31 +73,33 @@ class HandlerInputParams(BaseModel):
     test_run_id: str | None = None
     test_suite_run_id: str | None = None
 
+    command: str | None = None
 
-class HandlerInput(BaseModel):
+
+class ActionInput(BaseModel):
     input_schema: dict[str, Any] | None = None
-    params: HandlerInputParams | None = None
+    params: ActionInputParams | None = None
 
 
 class Event(Base, table=True):
     id: str = Field(primary_key=True)
 
-    workflow_run_id: str | None = Field(
-        default=None,
+    run_id: str = Field(
         index=True,
+        description="The run identifier associated with this event.",
     )
 
-    type: DefinitionType = Field(
+    type: NodeType = Field(
         default="generic",
         sa_column=Column(String, index=True),
     )
 
-    name: str = Field(
+    flow: str = Field(
         ...,
         index=True,
     )
 
-    x_id: str = Field(
+    node_id: str = Field(
         ...,
         index=True,
     )
@@ -104,72 +107,96 @@ class Event(Base, table=True):
     data: dict[str, Any] = Field(
         default={},
         sa_column=Column(JSON),
+        description="Event data used in the Node expression filters and validators",
     )
 
     ts: int = Field(
         sa_type=BIGINT,
+        description="Timestamp in nanoseconds",
     )
 
-    __table_args__ = (Index("idx_event_name_xid", "name", "x_id"),)
+    __table_args__ = (Index("idx_event_flow_node_id", "flow", "node_id"),)
 
 
-class DefinitionCondition(BaseModel):
+class NodeCondition(BaseModel):
     timeout_ms: int | None = Field(
         default=None,
     )
 
 
-class Definition(AuditBase, table=True):
-    id: str = Field(primary_key=True)
+ExprEngine = Literal["python", "js", "cel"]
 
-    type: DefinitionType = Field(
+
+class Expr(BaseModel):
+    engine: ExprEngine
+    script: str
+
+
+class Node(AuditBase, table=True):
+    """
+    Node is a Business logic node.
+
+    The (id, flow) pair SHOULD be unique, i.e., a flow can have multiple nodes,
+    but a node id can only belong to one flow.
+    """
+
+    id: str = Field(
+        ...,
+        index=True,
+        description="The id of the node, e.g. 'refund_stripe_approved_webhook'.",
+        primary_key=True,
+    )
+
+    flow: str = Field(
+        ...,
+        index=True,
+        description="The flow identifier to which this node belongs, e.g. 'refund'.",
+    )
+
+    type: NodeType = Field(
         default="generic",
         sa_column=Column(String, index=True),
     )
 
-    source: DefinitionSource = Field(
+    source: NodeSource = Field(
         default="manual",
         sa_column=Column(String, index=True),
-    )
-
-    handler: Handler | None = Field(
-        default=None,
-        sa_column=Column(String),
-    )
-
-    handler_input: HandlerInput | None = Field(
-        default=None,
-        sa_column=Column(JSON),
-    )
-
-    name: str = Field(
-        ...,
-        index=True,
+        description="Defines 'who' is the owner of this node",
     )
 
     description: str | None = Field(
         default=None,
     )
 
-    x_id: str = Field(
-        ...,
-        index=True,
-    )
-
     dep_ids: list[str] = Field(
         default=[],
         sa_column=Column(JSON),
+        description="List of node IDs that this node depends on.",
     )
 
-    filter: str | None = Field(
+    handler: ActionType | None = Field(
         default=None,
+        sa_column=Column(String),
     )
 
-    validator: str | None = Field(
+    handler_input: ActionInput | None = Field(
         default=None,
+        sa_column=Column(JSON),
     )
 
-    conditions: list[DefinitionCondition] = Field(
+    filter: Expr | None = Field(
+        default=None,
+        sa_column=Column(JSON),
+        description="Expression used by the SDKs",
+    )
+
+    validator: Expr | None = Field(
+        default=None,
+        sa_column=Column(JSON),
+        description="Optional expression that performs an assertion on the node's upstream data.",
+    )
+
+    conditions: list[NodeCondition] = Field(
         default=[],
         sa_column=Column(JSON),
     )
@@ -179,7 +206,7 @@ class Definition(AuditBase, table=True):
         sa_column=Column(JSON),
     )
 
-    __table_args__ = (Index("idx_definition_name_xid", "name", "x_id"),)
+    __table_args__ = (Index("idx_node_id_flow", "id", "flow"),)
 
     def ensure(self) -> None:
         if not self.dep_ids:
@@ -187,15 +214,15 @@ class Definition(AuditBase, table=True):
 
         if isinstance(self.conditions, list):
             self.conditions = [
-                DefinitionCondition.model_validate(cond) for cond in self.conditions
+                NodeCondition.model_validate(cond) for cond in self.conditions
             ]
 
 
 class BaseEvalItemOutput(BaseModel):
-    x_id: str
-    dep_x_ids: list[str]
+    node_id: str
+    dep_node_ids: list[str]
 
-    status: RunStatus
+    status: EvalStatus
 
     message: str | None = None
     error: str | None = None
@@ -207,7 +234,7 @@ class BaseEvalItemOutput(BaseModel):
 
 
 class BaseEvalOutput(BaseModel):
-    status: RunStatus = "pending"
+    status: EvalStatus = "pending"
     elapsed_ns: int = 0
     graph: dict[str, list[str]] = {}
     exec_info: list[BaseEvalItemOutput] = []
@@ -215,21 +242,29 @@ class BaseEvalOutput(BaseModel):
 
 
 class EvalOutput(AuditBase, table=True):
-    id: str = Field(primary_key=True)
+    id: str = Field(
+        primary_key=True,
+    )
 
-    name: str = Field(
+    flow: str = Field(
         ...,
         index=True,
     )
 
-    trigger_ev_id: str = Field(
-        ...,
+    run_id: str | None = Field(
+        default=None,
         index=True,
+        description="The run identifier associated with this evaluation output, if applicable.",
+    )
+
+    trigger_ev_id: str | None = Field(
+        default=None,
+        index=True,
+        description="The event ID that triggered this evaluation, if applicable.",
     )
 
     output: BaseEvalOutput = Field(
         sa_column=Column(JSON),
-        description="The output of the magic evaluation, including status, elapsed time, execution info, and event IDs.",
     )
 
     def ensure(self) -> None:

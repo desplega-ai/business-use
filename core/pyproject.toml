@@ -1,7 +1,7 @@
 [project]
-name = "magic-core"
+name = "business-use-core"
 version = "0.1.0"
-description = "Magic - A workflow automation and testing framework"
+description = "Business Use Core, ..."
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
@@ -36,11 +36,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/desplega-ai/magic"
-Documentation = "https://github.com/desplega-ai/magic#readme"
-Repository = "https://github.com/desplega-ai/magic"
-Issues = "https://github.com/desplega-ai/magic/issues"
-Changelog = "https://github.com/desplega-ai/magic/releases"
+Homepage = "https://github.com/desplega-ai/business-use"
+Documentation = "https://github.com/desplega-ai/business-use#readme"
+Repository = "https://github.com/desplega-ai/business-use"
+Issues = "https://github.com/desplega-ai/business-use/issues"
+Changelog = "https://github.com/desplega-ai/business-use/releases"
 
 [dependency-groups]
 dev = [

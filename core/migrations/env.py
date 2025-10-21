@@ -11,9 +11,9 @@ from src.db.async_db import Base
 
 # Import all models to ensure they are registered with SQLModel
 from src.models import (  # noqa: F401
-    Definition,
     EvalOutput,
     Event,
+    Node,
 )
 
 # this is the Alembic Config object, which provides

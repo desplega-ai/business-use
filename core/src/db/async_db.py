@@ -4,7 +4,6 @@ from typing import Any
 import pydantic.json
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import Pool
 from sqlmodel import SQLModel as Base
 
 from src.config import DATABASE_URL, DEBUG
