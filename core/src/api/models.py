@@ -23,9 +23,17 @@ class SuccessResponse(BaseModel):
 class EventBatchItem(BaseModel):
     flow: str
     id: str
+    description: str | None = None
+
     run_id: str
+
     type: NodeType
     data: dict[str, Any]
+
+    filter: Expr | None = None
+    validator: Expr | None = None
+    dep_ids: list[str] | None = None
+
     ts: int
 
 
@@ -60,5 +68,25 @@ class NodeUpdateSchema(NodeBaseSchema):
 
 
 class EvalInput(BaseModel):
-    ev_id: str
+    """Evaluation input - supports both old and new API.
+
+    Old API (legacy):
+        ev_id: Event ID to start evaluation from
+        whole_graph: Whether to evaluate entire graph or just downstream
+
+    New API (preferred):
+        run_id: Run identifier
+        flow: Flow identifier
+        start_node_id: Optional node to start from (for subgraph eval)
+
+    Note: Either ev_id OR (run_id + flow) must be provided.
+    """
+
+    # Legacy API
+    ev_id: str | None = None
     whole_graph: bool = False
+
+    # New API (preferred)
+    run_id: str | None = None
+    flow: str | None = None
+    start_node_id: str | None = None

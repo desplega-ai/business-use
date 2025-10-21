@@ -144,6 +144,7 @@ def create_sample_events() -> list[dict[str, Any]]:
         {
             "flow": "payment_refund",
             "id": "refund_webhook_received",
+            "description": "Webhook received from payment provider",
             "run_id": run_id,
             "type": "trigger",
             "data": {
@@ -152,11 +153,17 @@ def create_sample_events() -> list[dict[str, Any]]:
                 "user_id": "user_123",
                 "payment_id": "pay_456",
             },
+            "filter": {
+                "engine": "python",
+                "script": "event.get('type') == 'refund.requested'",
+            },
+            "dep_ids": [],
             "ts": current_ts,
         },
         {
             "flow": "payment_refund",
             "id": "refund_webhook_received",
+            "description": "Webhook received from payment provider",
             "run_id": run_id,
             "type": "trigger",
             "data": {
@@ -165,6 +172,11 @@ def create_sample_events() -> list[dict[str, Any]]:
                 "user_id": "user_789",
                 "payment_id": "pay_012",
             },
+            "filter": {
+                "engine": "python",
+                "script": "event.get('type') == 'refund.requested'",
+            },
+            "dep_ids": [],
             "ts": current_ts + 1000,
         },
     ]

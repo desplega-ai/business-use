@@ -48,6 +48,7 @@ Changelog = "https://github.com/desplega-ai/business-use/releases"
 dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "pytest>=8.0.0",
 ]
 
 [build-system]
@@ -75,6 +76,8 @@ exclude = [
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
+    "scripts/**",
+    "tests/**",
 ]
 
 [tool.ruff]
@@ -115,6 +118,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 show_error_codes = true
+exclude = ["scripts/"]
 
 # Allow some flexibility for SQLModel/Pydantic
 [[tool.mypy.overrides]]

@@ -1,5 +1,9 @@
 from bubus import BaseEvent
 
 
-class NewEvent(BaseEvent[bool]):
+class NewBatchEvent(BaseEvent[None]):
+    ev_ids: list[str]
+
+
+class NewEvent(BaseEvent[None]):
     ev_id: str

@@ -1,0 +1,61 @@
+{
+  "name": "business-use",
+  "version": "0.1.0",
+  "description": "Lightweight JavaScript/TypeScript SDK for Business-Use event tracking and assertions",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
+    "example": "tsx example.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "workflow",
+    "automation",
+    "testing",
+    "event-driven",
+    "observability",
+    "typescript",
+    "business-logic"
+  ],
+  "author": "Desplega AI <contact@desplega.ai>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/desplega-ai/business-use"
+  },
+  "homepage": "https://github.com/desplega-ai/business-use#readme",
+  "bugs": {
+    "url": "https://github.com/desplega-ai/business-use/issues"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@vitest/ui": "^2.1.8",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -212,6 +212,12 @@ class Node(AuditBase, table=True):
         if not self.dep_ids:
             self.dep_ids = []
 
+        if isinstance(self.filter, dict):
+            self.filter = Expr.model_validate(self.filter)
+
+        if isinstance(self.validator, dict):
+            self.validator = Expr.model_validate(self.validator)
+
         if isinstance(self.conditions, list):
             self.conditions = [
                 NodeCondition.model_validate(cond) for cond in self.conditions

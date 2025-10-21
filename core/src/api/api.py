@@ -19,14 +19,16 @@ from src.api.models import (
     SuccessResponse,
 )
 from src.db.transactional import transactional
-from src.events.handlers import handle_new_event
-from src.events.models import NewEvent
+from src.events.handlers import new_bus
+from src.events.models import NewBatchEvent
 from src.models import (
     EvalOutput,
     Event,
     Node,
 )
-from src.utils import now
+from src.utils.time import now
+
+log = logging.getLogger(__name__)
 
 
 class AppState(TypedDict):
@@ -85,7 +87,12 @@ async def persist_events_batch(
 ):
     ids: list[str] = []
 
+    # NOTE
+    # This is not optimal for large batches, and it's intended to be
+    # used locally for now.
     async with transactional() as s:
+        nodes: list[Node] = []
+
         for item in body:
             ev = Event(
                 id=str(uuid4()),
@@ -100,13 +107,37 @@ async def persist_events_batch(
             ids.append(ev.id)
             s.add(ev)
 
+            nodes.append(
+                Node(
+                    id=item.id,
+                    flow=item.flow,
+                    type=item.type,
+                    source="code",
+                    description=item.description,
+                    dep_ids=item.dep_ids or [],
+                    validator=item.validator,
+                    filter=item.filter,
+                    created_at=now(),
+                )
+            )
+
+        # Upsert nodes
+        for node in nodes:
+            existing_node = await s.get(Node, node.id)
+
+            if existing_node:
+                await s.merge(node)
+
+            else:
+                s.add(node)
+
     b: EventBus = request.state.bus
 
-    for id in ids:
-        b.dispatch(NewEvent(ev_id=id))
+    # Notify new batch of events
+    b.dispatch(NewBatchEvent(ev_ids=ids))
 
     return SuccessResponse(
-        message="Events persisted",
+        message="Ok",
     )
 
 
@@ -147,7 +178,37 @@ async def run_eval(
     _: Annotated[None, Depends(ensure_api_key)],
     body: EvalInput,
 ):
-    raise NotImplementedError("Evaluation endpoint not implemented yet")
+    """Run flow evaluation (supports both old and new API).
+
+    The body can contain either:
+    - ev_id (legacy): Evaluates from a specific event
+    - run_id + flow (new): Evaluates entire run
+
+    The new API is preferred and more efficient.
+    """
+    from src.eval import eval_event, eval_flow_run
+
+    # New API (preferred)
+    if body.run_id and body.flow:
+        result = await eval_flow_run(
+            run_id=body.run_id,
+            flow=body.flow,
+            start_node_id=body.start_node_id,
+        )
+        return result
+
+    # Legacy API
+    if body.ev_id:
+        result = await eval_event(
+            event_id=body.ev_id,
+            whole_graph=body.whole_graph,
+        )
+        return result
+
+    raise HTTPException(
+        status_code=400,
+        detail="Must provide either ev_id OR (run_id + flow)",
+    )
 
 
 @router.get("/nodes")
@@ -267,14 +328,11 @@ async def delete_definition(
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[AppState]:
-    bus = EventBus()
-    bus.on(NewEvent, handle_new_event)
-
     yield {
-        "bus": bus,
+        "bus": new_bus(),
     }
 
-    logging.info("Ciaito!")
+    log.info("Ciaito!")
 
 
 app = FastAPI(lifespan=lifespan)
