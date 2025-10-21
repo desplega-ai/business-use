@@ -1,8 +1,11 @@
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, TypedDict
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from bubus import EventBus
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import desc
 from sqlmodel import select
@@ -10,17 +13,25 @@ from sqlmodel import select
 from src.api.middlewares import ensure_api_key
 from src.api.models import (
     EvalInput,
+    EventBatchItem,
     NodeCreateSchema,
     NodeUpdateSchema,
     SuccessResponse,
 )
 from src.db.transactional import transactional
+from src.events.handlers import handle_new_event
+from src.events.models import NewEvent
 from src.models import (
     EvalOutput,
     Event,
     Node,
 )
 from src.utils import now
+
+
+class AppState(TypedDict):
+    bus: EventBus
+
 
 router = APIRouter(
     prefix="/v1",
@@ -33,20 +44,6 @@ async def check(_: Annotated[None, Depends(ensure_api_key)]):
     return SuccessResponse(
         message="lgtm",
     )
-
-
-@router.get("/nodes")
-async def get_nodes(_: Annotated[None, Depends(ensure_api_key)]):
-    async with transactional() as s:
-        defs = await s.execute(
-            select(Node).where(
-                Node.deleted_at.is_(None),  # type: ignore
-            )
-        )
-
-        defs = defs.scalars().all()
-
-    return defs
 
 
 @router.get("/eval-outputs")
@@ -78,6 +75,39 @@ async def get_eval_outputs(
         outs = outs.scalars().all()
 
     return outs
+
+
+@router.post("/events-batch")
+async def persist_events_batch(
+    _: Annotated[None, Depends(ensure_api_key)],
+    request: Request,
+    body: list[EventBatchItem],
+):
+    ids: list[str] = []
+
+    async with transactional() as s:
+        for item in body:
+            ev = Event(
+                id=str(uuid4()),
+                flow=item.flow,
+                node_id=item.id,
+                run_id=item.run_id,
+                type=item.type,
+                data=item.data,
+                ts=item.ts,
+            )
+
+            ids.append(ev.id)
+            s.add(ev)
+
+    b: EventBus = request.state.bus
+
+    for id in ids:
+        b.dispatch(NewEvent(ev_id=id))
+
+    return SuccessResponse(
+        message="Events persisted",
+    )
 
 
 @router.get("/events")
@@ -112,15 +142,29 @@ async def get_events(
     return evs
 
 
-@router.post("/eval")
-async def perform_eval(
+@router.post("/run-eval")
+async def run_eval(
     _: Annotated[None, Depends(ensure_api_key)],
     body: EvalInput,
 ):
     raise NotImplementedError("Evaluation endpoint not implemented yet")
 
 
-@router.post("/node")
+@router.get("/nodes")
+async def get_nodes(_: Annotated[None, Depends(ensure_api_key)]):
+    async with transactional() as s:
+        defs = await s.execute(
+            select(Node).where(
+                Node.deleted_at.is_(None),  # type: ignore
+            )
+        )
+
+        defs = defs.scalars().all()
+
+    return defs
+
+
+@router.post("/nodes")
 async def create_node(
     _: Annotated[None, Depends(ensure_api_key)],
     body: NodeCreateSchema,
@@ -164,7 +208,7 @@ async def create_node(
     return md
 
 
-@router.put("/node/{node_id}")
+@router.put("/nodes/{node_id}")
 async def update_node(
     node_id: str,
     _: Annotated[None, Depends(ensure_api_key)],
@@ -196,7 +240,7 @@ async def update_node(
     return md
 
 
-@router.delete("/node/{node_id}")
+@router.delete("/nodes/{node_id}")
 async def delete_definition(
     node_id: str,
     _: Annotated[None, Depends(ensure_api_key)],
@@ -222,12 +266,15 @@ async def delete_definition(
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    logging.info("Starting up FastAPI")
+async def lifespan(_: FastAPI) -> AsyncIterator[AppState]:
+    bus = EventBus()
+    bus.on(NewEvent, handle_new_event)
 
-    yield
+    yield {
+        "bus": bus,
+    }
 
-    logging.info("Shutting down FastAPI")
+    logging.info("Ciaito!")
 
 
 app = FastAPI(lifespan=lifespan)

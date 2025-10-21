@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from src.models import (
     ActionInput,
     ActionType,
+    Expr,
     NodeCondition,
+    NodeType,
 )
 
 
@@ -18,14 +20,23 @@ class SuccessResponse(BaseModel):
     timestamp: datetime = datetime.now(UTC)
 
 
+class EventBatchItem(BaseModel):
+    flow: str
+    id: str
+    run_id: str
+    type: NodeType
+    data: dict[str, Any]
+    ts: int
+
+
 class NodeBaseSchema(BaseModel):
     description: str | None = None
 
     conditions: list[NodeCondition] | None = None
     dep_ids: list[str] | None = None
 
-    filter: str | None = None
-    validator: str | None = None
+    filter: Expr | None = None
+    validator: Expr | None = None
 
     handler: ActionType | None = None
     handler_input: ActionInput | None = None
