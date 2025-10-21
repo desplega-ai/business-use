@@ -117,16 +117,25 @@ async def persist_events_batch(
                     dep_ids=item.dep_ids or [],
                     validator=item.validator,
                     filter=item.filter,
+                    conditions=item.conditions or [],
+                    additional_meta=item.additional_meta,
                     created_at=now(),
                 )
             )
 
-        # Upsert nodes
+        # Upsert nodes - but don't overwrite user-edited fields
         for node in nodes:
             existing_node = await s.get(Node, node.id)
 
             if existing_node:
-                await s.merge(node)
+                # Only update SDK-controlled fields for code-defined nodes
+                # Don't overwrite user edits from UI (description, dep_ids, conditions, etc.)
+                if existing_node.source == "code":
+                    existing_node.validator = node.validator
+                    existing_node.filter = node.filter
+                    existing_node.updated_at = now()
+                    await s.merge(existing_node)
+                # If source is "manual", don't update - user has edited in UI
 
             else:
                 s.add(node)
@@ -339,6 +348,8 @@ app = FastAPI(lifespan=lifespan)
 
 origins = [
     "http://localhost:3007",
+    "http://localhost:13370",
+    "http://localhost:5174",
 ]
 
 

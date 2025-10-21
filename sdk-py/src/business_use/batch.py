@@ -154,6 +154,11 @@ class BatchProcessor:
                     dep_ids = (
                         event.dep_ids() if callable(event.dep_ids) else event.dep_ids
                     )
+                    conditions = (
+                        event.conditions()
+                        if callable(event.conditions)
+                        else event.conditions
+                    )
 
                     # Serialize filter if present and callable (send to backend)
                     filter_expr = None
@@ -177,6 +182,8 @@ class BatchProcessor:
                         dep_ids=dep_ids,
                         filter=filter_expr,
                         validator=validator_expr,
+                        conditions=conditions,
+                        additional_meta=event.additional_meta,
                     )
                     items.append(item)
 

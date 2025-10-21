@@ -3,7 +3,7 @@
 import logging
 import time
 
-from business_use import act, assert_, initialize, shutdown
+from business_use import NodeCondition, ensure, initialize, shutdown
 
 # Enable debug logging to see what's happening
 logging.basicConfig(level=logging.DEBUG)
@@ -20,7 +20,7 @@ initialize(
 # Track some business actions
 print("\nTracking business actions...")
 
-act(
+ensure(
     id="user_signup",
     flow="onboarding",
     run_id="run_001",
@@ -28,7 +28,7 @@ act(
     description="User signed up for premium plan",
 )
 
-act(
+ensure(
     id="email_verified",
     flow="onboarding",
     run_id="run_001",
@@ -46,7 +46,7 @@ def validate_payment(data, ctx):
     return data["amount"] > 0 and data["currency"] in ["USD", "EUR", "GBP"]
 
 
-assert_(
+ensure(
     id="payment_valid",
     flow="checkout",
     run_id="run_002",
@@ -57,7 +57,7 @@ assert_(
 )
 
 # Example with filter (this will be skipped)
-act(
+ensure(
     id="debug_event",
     flow="diagnostics",
     run_id="run_003",
@@ -67,7 +67,7 @@ act(
 )
 
 # Example with lambda filter (this will be sent)
-act(
+ensure(
     id="production_event",
     flow="diagnostics",
     run_id="run_003",
@@ -77,12 +77,23 @@ act(
 )
 
 # Example with lambda run_id
-act(
+ensure(
     id="dynamic_run",
     flow="testing",
     run_id=lambda: f"dynamic_{int(time.time())}",
     data={"test": True},
     description="Using dynamic run ID",
+)
+
+# Example with conditions and additional metadata
+ensure(
+    id="critical_payment",
+    flow="checkout",
+    run_id="run_004",
+    data={"amount": 500, "currency": "USD"},
+    conditions=[NodeCondition(timeout_ms=3000)],
+    additional_meta={"priority": "high", "source": "api"},
+    description="High-priority payment with timeout",
 )
 
 print("\nWaiting for batches to be sent...")

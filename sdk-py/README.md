@@ -1,5 +1,7 @@
 # Business-Use Python SDK
 
+[![Format & Lint Checks](https://github.com/desplega-ai/business-use/actions/workflows/check.yaml/badge.svg)](https://github.com/desplega-ai/business-use/actions/workflows/check.yaml)
+
 A lightweight, production-ready Python SDK for tracking business events and assertions in your applications.
 
 ## Features

@@ -1,5 +1,7 @@
 # Business-Use JavaScript SDK
 
+[![Format & Lint Checks](https://github.com/desplega-ai/business-use/actions/workflows/check.yaml/badge.svg)](https://github.com/desplega-ai/business-use/actions/workflows/check.yaml)
+
 A lightweight JavaScript/TypeScript SDK for tracking business events and assertions in production applications.
 
 ## Features
@@ -204,19 +206,53 @@ The SDK is designed to **never fail your application**:
 
 ## TypeScript Support
 
-The SDK is written in TypeScript and provides full type definitions:
+The SDK is written in TypeScript and provides full type definitions with **type-safe filter and validator functions**:
 
 ```typescript
 import { initialize, act, assert, type EventBatchItem } from 'business-use';
 
-// Full type inference and autocomplete
+// Type inference - the data parameter in filter/validator is automatically typed!
 act({
-  id: 'event_id',
-  flow: 'flow_name',
-  runId: 'run_id',
-  data: { /* fully typed */ },
+  id: 'payment_processed',
+  flow: 'checkout',
+  runId: 'run_123',
+  data: { amount: 100, currency: 'USD' },
+  filter: (data) => data.amount > 0, // data.amount is known to exist!
+});
+
+// Explicit types for even better type safety
+interface OrderData {
+  orderId: string;
+  total: number;
+  items: Array<{ id: string; price: number }>;
+}
+
+assert<OrderData>({
+  id: 'order_validation',
+  flow: 'checkout',
+  runId: 'run_456',
+  data: {
+    orderId: '12345',
+    total: 200,
+    items: [
+      { id: 'item1', price: 100 },
+      { id: 'item2', price: 100 },
+    ],
+  },
+  validator: (data, ctx) => {
+    // Full autocomplete and type checking for data!
+    const calculatedTotal = data.items.reduce((sum, item) => sum + item.price, 0);
+    return data.total === calculatedTotal;
+  },
 });
 ```
+
+### Type Safety Features
+
+- **Automatic type inference**: The `data` parameter in `filter` and `validator` functions is automatically typed based on the `data` field
+- **Explicit type parameters**: Use generic type parameters (`act<T>`, `assert<T>`) for even stricter type checking
+- **Nested object support**: Full type safety for complex nested data structures
+- **IDE autocomplete**: Get full IntelliSense/autocomplete in VS Code and other TypeScript-aware editors
 
 ## Architecture
 

@@ -1,0 +1,29 @@
+flow: checkout
+nodes:
+  - id: cart_created
+    type: trigger
+    description: Shopping cart created event (updated)
+    dep_ids: []
+    filter:
+      engine: python
+      script: "data.get('event_type') == 'cart.created'"
+    conditions:
+      - timeout_ms: 5000
+
+  - id: validate_items
+    type: hook
+    description: Validate cart has items
+    dep_ids:
+      - cart_created
+    validator:
+      engine: python
+      script: "len(data.get('items', [])) > 0"
+
+  - id: calculate_total
+    type: hook
+    description: Calculate cart total
+    dep_ids:
+      - validate_items
+    filter:
+      engine: python
+      script: "data.get('status') == 'valid'"

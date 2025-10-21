@@ -25,7 +25,11 @@ This document defines the architecture for Business-Use client SDKs. It provides
 
 ## Overview
 
-The Business-Use SDK provides a lightweight, synchronous API for tracking business events (`act`) and assertions (`assert`) in production applications. Events are batched and sent to a backend API to minimize performance impact.
+The Business-Use SDK provides a lightweight, synchronous API for tracking business events via the unified `ensure()` function. The event type is automatically determined based on whether a validator is provided:
+- **Actions** (`act`): Created when `validator` is not provided
+- **Assertions** (`assert`): Created when `validator` is provided
+
+Events are batched and sent to a backend API to minimize performance impact.
 
 ### Design Goals
 
@@ -77,10 +81,8 @@ All public APIs are thread-safe:
                     │   (Singleton)    │
                     └──────────────────┘
                               │
-         ┌────────────────────┼────────────────────┐
-         │                    │                    │
-         │ act()              │                    │ assert()
-         ▼                    ▼                    ▼
+                              │ ensure()
+                              ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              Thread-Safe Event Queue (FIFO)                  │
 │  Max Size: batch_size * 10 (default 1000)                   │
@@ -115,8 +117,12 @@ All public APIs are thread-safe:
 **Responsibilities:**
 - Validates connection on `initialize()`
 - Stores configuration (API key, URL, batch settings)
-- Provides public API: `act()`, `assert()`
+- Provides public API: `ensure()` (auto-determines type based on validator)
 - Manages initialization state (thread-safe)
+
+**Type Auto-Detection:**
+- If `validator` parameter is provided → creates "assert" node
+- If `validator` is `None`/`undefined` → creates "act" node
 
 **State:**
 - `_initialized`: Boolean flag (protected by lock)

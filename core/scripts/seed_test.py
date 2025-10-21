@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Test script for batch upserting nodes to the Magic API.
+Test script for batch upserting nodes to the Business-Use API.
 
 This script demonstrates how to create multiple nodes in a flow using the API.
 """
@@ -184,7 +184,7 @@ def create_sample_events() -> list[dict[str, Any]]:
 
 async def main() -> None:
     """Main entry point."""
-    print("[INFO] Magic API Batch Upsert Test\n")
+    print("[INFO] Business-Use API Batch Upsert Test\n")
     print(f"API URL: {API_BASE_URL}")
     print(f"API Key: {API_KEY[:10]}..." if len(API_KEY) > 10 else "API Key: (not set)")
     print()

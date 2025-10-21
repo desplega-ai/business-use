@@ -131,9 +131,9 @@ filtered = [ev for ev in events if matches_filter(ev)]
 events = await storage.get_events_by_run(run_id, flow, session)
 ```
 
-### 2. **Remove Magic* Models**
+### 2. **Remove Legacy Models**
 
-**Old:** Used `MagicEvent`, `MagicDefinition` (legacy models)
+**Old:** Used legacy event and definition models
 **New:** Uses `Event`, `Node` from `src.models` (current models)
 
 ### 3. **Pluggable Architecture**

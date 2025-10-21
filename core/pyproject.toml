@@ -49,6 +49,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "pytest>=8.0.0",
+    "types-pyyaml>=6.0.12.20250915",
 ]
 
 [build-system]

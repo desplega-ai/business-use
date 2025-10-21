@@ -16,6 +16,12 @@ class Expr(BaseModel):
     script: str
 
 
+class NodeCondition(BaseModel):
+    """Condition for node execution."""
+
+    timeout_ms: int | None = None
+
+
 class EventBatchItem(BaseModel):
     """Event item for batch submission to backend API."""
 
@@ -29,6 +35,8 @@ class EventBatchItem(BaseModel):
     dep_ids: list[str] | None = None
     filter: Expr | None = None
     validator: Expr | None = None
+    conditions: list[NodeCondition] | None = None
+    additional_meta: dict[str, Any] | None = None
 
 
 class QueuedEvent(BaseModel):
@@ -45,3 +53,5 @@ class QueuedEvent(BaseModel):
     dep_ids: list[str] | Callable[[], list[str]] | None = None
     filter: bool | Callable[[], bool] | None = None
     validator: Callable[[dict[str, Any], dict[str, Any]], bool] | None = None
+    conditions: list[NodeCondition] | Callable[[], list[NodeCondition]] | None = None
+    additional_meta: dict[str, Any] | None = None

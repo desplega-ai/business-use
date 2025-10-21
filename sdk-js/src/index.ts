@@ -5,25 +5,25 @@
  *
  * @example
  * ```typescript
- * import { initialize, act, assert } from 'business-use';
+ * import { initialize, ensure } from 'business-use';
  *
  * // Initialize the SDK
  * initialize({ apiKey: 'your-api-key' });
  *
- * // Track an action
- * act({
+ * // Track an action (no validator)
+ * ensure({
  *   id: 'payment_processed',
  *   flow: 'checkout',
  *   runId: 'run_12345',
  *   data: { amount: 100, currency: 'USD' }
  * });
  *
- * // Track an assertion
+ * // Track an assertion (with validator)
  * function validateTotal(data: Record<string, any>, ctx: Record<string, any>): boolean {
  *   return data.total > 0;
  * }
  *
- * assert({
+ * ensure({
  *   id: 'order_total_valid',
  *   flow: 'checkout',
  *   runId: 'run_12345',
@@ -35,7 +35,7 @@
  * @module business-use
  */
 
-export { initialize, act, assert, shutdown } from './client.js';
-export type { NodeType, ExprEngine, Expr, EventBatchItem, QueuedEvent } from './models.js';
+export { initialize, ensure, shutdown } from './client.js';
+export type { NodeType, ExprEngine, Expr, EventBatchItem, QueuedEvent, NodeCondition } from './models.js';
 
 export const version = '0.1.0';

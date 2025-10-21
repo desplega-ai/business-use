@@ -10,7 +10,7 @@ from typing import Any, Callable
 import httpx
 
 from .batch import BatchProcessor
-from .models import NodeType, QueuedEvent
+from .models import NodeCondition, NodeType, QueuedEvent
 
 logger = logging.getLogger("business-use")
 
@@ -37,7 +37,7 @@ def initialize(
 ) -> None:
     """Initialize the Business-Use SDK.
 
-    This function must be called before using `act()` or `assert()`.
+    This function must be called before using `ensure()`.
     It validates the connection to the backend and starts the background
     batch processor.
 
@@ -52,9 +52,9 @@ def initialize(
         max_queue_size: Max queue size (default: batch_size * 10)
 
     Example:
-        >>> from business_use import initialize, act
+        >>> from business_use import initialize, ensure
         >>> initialize(api_key="your-api-key")
-        >>> act(id="user_signup", flow="onboarding", run_id="123", data={"email": "user@example.com"})
+        >>> ensure(id="user_signup", flow="onboarding", run_id="123", data={"email": "user@example.com"})
 
         Or using environment variables:
         >>> # Set BUSINESS_USE_API_KEY=your-api-key in environment
@@ -108,19 +108,26 @@ def initialize(
             _state.initialized = False
 
 
-def act(
+def ensure(
     id: str,
     flow: str,
     run_id: str | Callable[[], str],
     data: dict[str, Any],
     filter: bool | Callable[[], bool] | None = None,
     dep_ids: list[str] | Callable[[], list[str]] | None = None,
+    validator: Callable[[dict[str, Any], dict[str, Any]], bool] | None = None,
     description: str | None = None,
+    conditions: list[NodeCondition] | Callable[[], list[NodeCondition]] | None = None,
+    additional_meta: dict[str, Any] | None = None,
 ) -> None:
-    """Track a business action event.
+    """Track a business event. Type is auto-determined by validator presence.
 
     This function is synchronous and non-blocking. Events are queued and
     sent in batches to the backend.
+
+    The event type is automatically determined:
+    - If `validator` is provided: creates an "assert" node
+    - If `validator` is None: creates an "act" node
 
     This function never raises exceptions. If the SDK is not initialized,
     this is a no-op.
@@ -132,10 +139,14 @@ def act(
         data: Event data payload
         filter: Optional filter (bool or lambda). If False, event is skipped
         dep_ids: Optional dependency node IDs (list or lambda)
+        validator: Optional validation function (executed on backend). If provided, creates "assert" node
         description: Optional human-readable description
+        conditions: Optional list of conditions (e.g., timeout constraints)
+        additional_meta: Optional additional metadata dict
 
     Example:
-        >>> act(
+        >>> # Action node (no validator)
+        >>> ensure(
         ...     id="payment_processed",
         ...     flow="checkout",
         ...     run_id="run_12345",
@@ -144,61 +155,11 @@ def act(
         ...     description="Payment processed successfully"
         ... )
 
-        Using lambdas:
-        >>> act(
-        ...     id="order_completed",
-        ...     flow="checkout",
-        ...     run_id=lambda: get_current_run_id(),
-        ...     data={"order_id": order.id},
-        ...     filter=lambda: order.amount > 0,
-        ... )
-    """
-    _enqueue_event(
-        type="act",
-        id=id,
-        flow=flow,
-        run_id=run_id,
-        data=data,
-        filter=filter,
-        dep_ids=dep_ids,
-        description=description,
-        validator=None,
-    )
-
-
-def assert_(
-    id: str,
-    flow: str,
-    run_id: str | Callable[[], str],
-    data: dict[str, Any],
-    filter: bool | Callable[[], bool] | None = None,
-    dep_ids: list[str] | Callable[[], list[str]] | None = None,
-    validator: Callable[[dict[str, Any], dict[str, Any]], bool] | None = None,
-    description: str | None = None,
-) -> None:
-    """Track a business assertion.
-
-    This function is synchronous and non-blocking. Assertions are queued
-    and sent in batches to the backend.
-
-    This function never raises exceptions. If the SDK is not initialized,
-    this is a no-op.
-
-    Args:
-        id: Unique node/event identifier (e.g., "order_total_valid")
-        flow: Flow identifier (e.g., "checkout")
-        run_id: Run identifier (string or lambda returning string)
-        data: Event data payload
-        filter: Optional filter (bool or lambda). If False, assertion is skipped
-        dep_ids: Optional dependency node IDs (list or lambda)
-        validator: Optional validation function (executed on backend)
-        description: Optional human-readable description
-
-    Example:
+        >>> # Assertion node (with validator)
         >>> def validate_order_total(data, ctx):
         ...     return data["total"] == sum(item["price"] for item in data["items"])
         ...
-        >>> assert_(
+        >>> ensure(
         ...     id="order_total_matches",
         ...     flow="checkout",
         ...     run_id="run_12345",
@@ -206,9 +167,21 @@ def assert_(
         ...     validator=validate_order_total,
         ...     description="Order total matches sum of items"
         ... )
+
+        Using lambdas and conditions:
+        >>> from business_use import NodeCondition
+        >>> ensure(
+        ...     id="order_completed",
+        ...     flow="checkout",
+        ...     run_id=lambda: get_current_run_id(),
+        ...     data={"order_id": order.id},
+        ...     filter=lambda: order.amount > 0,
+        ...     conditions=[NodeCondition(timeout_ms=5000)],
+        ...     additional_meta={"source": "api"}
+        ... )
     """
     _enqueue_event(
-        type="assert",
+        type="assert" if validator else "act",
         id=id,
         flow=flow,
         run_id=run_id,
@@ -217,6 +190,8 @@ def assert_(
         dep_ids=dep_ids,
         description=description,
         validator=validator,
+        conditions=conditions,
+        additional_meta=additional_meta,
     )
 
 
@@ -255,6 +230,8 @@ def _enqueue_event(
     dep_ids: list[str] | Callable[[], list[str]] | None,
     description: str | None,
     validator: Callable[[dict[str, Any], dict[str, Any]], bool] | None,
+    conditions: list[NodeCondition] | Callable[[], list[NodeCondition]] | None,
+    additional_meta: dict[str, Any] | None,
 ) -> None:
     """Internal helper to enqueue an event.
 
@@ -268,6 +245,8 @@ def _enqueue_event(
         dep_ids: Dependencies or lambda
         description: Optional description
         validator: Optional validator function
+        conditions: Optional conditions or lambda
+        additional_meta: Optional additional metadata
     """
     # No-op if not initialized
     if not _state.initialized or _state.batch_processor is None:
@@ -291,6 +270,10 @@ def _enqueue_event(
             logger.error(f"Event {id}: validator cannot be an async function")
             return
 
+        if callable(conditions) and inspect.iscoroutinefunction(conditions):
+            logger.error(f"Event {id}: conditions cannot be an async function")
+            return
+
         event = QueuedEvent(
             type=type,
             id=id,
@@ -301,6 +284,8 @@ def _enqueue_event(
             dep_ids=dep_ids,
             description=description,
             validator=validator,
+            conditions=conditions,
+            additional_meta=additional_meta,
         )
 
         _state.batch_processor.enqueue(event)

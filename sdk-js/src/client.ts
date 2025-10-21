@@ -3,7 +3,7 @@
  */
 
 import { BatchProcessor } from './batch.js';
-import type { NodeType, QueuedEvent } from './models.js';
+import type { NodeCondition, NodeType, QueuedEvent } from './models.js';
 
 /**
  * Logger utility
@@ -29,7 +29,7 @@ const _state = new SDKState();
 /**
  * Initialize the Business-Use SDK.
  *
- * This function must be called before using `act()` or `assert()`.
+ * This function must be called before using `ensure()`.
  * It validates the connection to the backend and starts the background
  * batch processor.
  *
@@ -45,10 +45,10 @@ const _state = new SDKState();
  *
  * @example
  * ```typescript
- * import { initialize, act } from 'business-use';
+ * import { initialize, ensure } from 'business-use';
  *
  * initialize({ apiKey: 'your-api-key' });
- * act({
+ * ensure({
  *   id: 'user_signup',
  *   flow: 'onboarding',
  *   runId: '123',
@@ -119,10 +119,14 @@ export function initialize(options?: {
 }
 
 /**
- * Track a business action event.
+ * Track a business event. Type is auto-determined by validator presence.
  *
  * This function is synchronous and non-blocking. Events are queued and
  * sent in batches to the backend.
+ *
+ * The event type is automatically determined:
+ * - If `validator` is provided: creates an "assert" node
+ * - If `validator` is undefined: creates an "act" node
  *
  * This function never throws exceptions. If the SDK is not initialized,
  * this is a no-op.
@@ -134,11 +138,15 @@ export function initialize(options?: {
  * @param options.data - Event data payload
  * @param options.filter - Optional filter (boolean or function). If false, event is skipped
  * @param options.depIds - Optional dependency node IDs (array or function)
+ * @param options.validator - Optional validation function (executed on backend). If provided, creates "assert" node
  * @param options.description - Optional human-readable description
+ * @param options.conditions - Optional list of conditions (e.g., timeout constraints)
+ * @param options.additional_meta - Optional additional metadata dict
  *
  * @example
  * ```typescript
- * act({
+ * // Action node (no validator)
+ * ensure({
  *   id: 'payment_processed',
  *   flow: 'checkout',
  *   runId: 'run_12345',
@@ -147,61 +155,8 @@ export function initialize(options?: {
  *   description: 'Payment processed successfully'
  * });
  *
- * // Using functions with type safety
- * act({
- *   id: 'order_completed',
- *   flow: 'checkout',
- *   runId: () => getCurrentRunId(),
- *   data: { orderId: '123', amount: 100 },
- *   filter: (data) => data.amount > 0, // data is typed!
- * });
- * ```
- */
-export function act<TData extends Record<string, any> = Record<string, any>>(options: {
-  id: string;
-  flow: string;
-  runId: string | (() => string);
-  data: TData;
-  filter?: boolean | ((data: TData) => boolean);
-  depIds?: string[] | (() => string[]);
-  description?: string;
-}): void {
-  _enqueueEvent({
-    type: 'act',
-    id: options.id,
-    flow: options.flow,
-    runId: options.runId,
-    data: options.data,
-    filter: options.filter,
-    depIds: options.depIds,
-    description: options.description,
-    validator: undefined,
-  });
-}
-
-/**
- * Track a business assertion.
- *
- * This function is synchronous and non-blocking. Assertions are queued
- * and sent in batches to the backend.
- *
- * This function never throws exceptions. If the SDK is not initialized,
- * this is a no-op.
- *
- * @param options - Assertion options
- * @param options.id - Unique node/event identifier (e.g., "order_total_valid")
- * @param options.flow - Flow identifier (e.g., "checkout")
- * @param options.runId - Run identifier (string or function returning string)
- * @param options.data - Event data payload
- * @param options.filter - Optional filter (boolean or function). If false, assertion is skipped
- * @param options.depIds - Optional dependency node IDs (array or function)
- * @param options.validator - Optional validation function (executed on backend)
- * @param options.description - Optional human-readable description
- *
- * @example
- * ```typescript
- * // With type safety - data parameter is typed!
- * assert({
+ * // Assertion node (with validator) - type-safe!
+ * ensure({
  *   id: 'order_total_matches',
  *   flow: 'checkout',
  *   runId: 'run_12345',
@@ -212,9 +167,20 @@ export function act<TData extends Record<string, any> = Record<string, any>>(opt
  *   },
  *   description: 'Order total matches sum of items'
  * });
+ *
+ * // Using functions and conditions
+ * ensure({
+ *   id: 'order_completed',
+ *   flow: 'checkout',
+ *   runId: () => getCurrentRunId(),
+ *   data: { orderId: '123', amount: 100 },
+ *   filter: (data) => data.amount > 0,
+ *   conditions: [{ timeout_ms: 5000 }],
+ *   additional_meta: { source: 'api' }
+ * });
  * ```
  */
-export function assert<TData extends Record<string, any> = Record<string, any>>(options: {
+export function ensure<TData extends Record<string, any> = Record<string, any>>(options: {
   id: string;
   flow: string;
   runId: string | (() => string);
@@ -223,9 +189,11 @@ export function assert<TData extends Record<string, any> = Record<string, any>>(
   depIds?: string[] | (() => string[]);
   validator?: (data: TData, ctx: Record<string, any>) => boolean;
   description?: string;
+  conditions?: NodeCondition[] | (() => NodeCondition[]);
+  additional_meta?: Record<string, any>;
 }): void {
   _enqueueEvent({
-    type: 'assert',
+    type: options.validator ? 'assert' : 'act',
     id: options.id,
     flow: options.flow,
     runId: options.runId,
@@ -234,6 +202,8 @@ export function assert<TData extends Record<string, any> = Record<string, any>>(
     depIds: options.depIds,
     description: options.description,
     validator: options.validator,
+    conditions: options.conditions,
+    additional_meta: options.additional_meta,
   });
 }
 
@@ -268,16 +238,18 @@ export async function shutdown(timeout: number = 5000): Promise<void> {
 /**
  * Internal helper to enqueue an event.
  */
-function _enqueueEvent(options: {
+function _enqueueEvent<TData extends Record<string, any>>(options: {
   type: NodeType;
   id: string;
   flow: string;
   runId: string | (() => string);
-  data: Record<string, any>;
-  filter?: boolean | (() => boolean);
+  data: TData;
+  filter?: boolean | ((data: TData) => boolean);
   depIds?: string[] | (() => string[]);
   description?: string;
-  validator?: (data: Record<string, any>, ctx: Record<string, any>) => boolean;
+  validator?: (data: TData, ctx: Record<string, any>) => boolean;
+  conditions?: NodeCondition[] | (() => NodeCondition[]);
+  additional_meta?: Record<string, any>;
 }): void {
   // No-op if not initialized
   if (!_state.initialized || !_state.batchProcessor) {
@@ -306,16 +278,23 @@ function _enqueueEvent(options: {
       return;
     }
 
+    if (options.conditions !== undefined && typeof options.conditions === 'function' && isAsyncFunction(options.conditions)) {
+      log.error(`Event ${options.id}: conditions cannot be an async function`);
+      return;
+    }
+
     const event: QueuedEvent = {
       type: options.type,
       id: options.id,
       flow: options.flow,
       run_id: options.runId,
       data: options.data,
-      filter: options.filter,
+      filter: options.filter as boolean | ((data: Record<string, any>) => boolean) | undefined,
       dep_ids: options.depIds,
       description: options.description,
-      validator: options.validator,
+      validator: options.validator as ((data: Record<string, any>, ctx: Record<string, any>) => boolean) | undefined,
+      conditions: options.conditions,
+      additional_meta: options.additional_meta,
     };
 
     _state.batchProcessor.enqueue(event);

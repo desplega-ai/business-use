@@ -1,8 +1,8 @@
 /**
- * Example usage of the Business-Use JavaScript SDK.
+ * Example usage of the Business-Use JavaScript/TypeScript SDK.
  */
 
-import { initialize, act, assert, shutdown } from './src/index.js';
+import { initialize, ensure, shutdown } from 'business-use';
 
 // Initialize the SDK
 console.log('Initializing SDK...');
@@ -16,7 +16,7 @@ initialize({
 // Track some business actions
 console.log('\nTracking business actions...');
 
-act({
+ensure({
   id: 'user_signup',
   flow: 'onboarding',
   runId: 'run_001',
@@ -24,7 +24,7 @@ act({
   description: 'User signed up for premium plan',
 });
 
-act({
+ensure({
   id: 'email_verified',
   flow: 'onboarding',
   runId: 'run_001',
@@ -37,7 +37,7 @@ act({
 console.log('\nTracking business assertions...');
 
 // Example with fully typed assertion - data parameter is type-safe!
-assert({
+ensure({
   id: 'payment_valid',
   flow: 'checkout',
   runId: 'run_002',
@@ -51,7 +51,7 @@ assert({
 });
 
 // Example with filter (this will be skipped)
-act({
+ensure({
   id: 'debug_event',
   flow: 'diagnostics',
   runId: 'run_003',
@@ -61,7 +61,7 @@ act({
 });
 
 // Example with lambda filter (this will be sent) - with type safety!
-act({
+ensure({
   id: 'production_event',
   flow: 'diagnostics',
   runId: 'run_003',
@@ -71,12 +71,23 @@ act({
 });
 
 // Example with lambda runId
-act({
+ensure({
   id: 'dynamic_run',
   flow: 'testing',
   runId: () => `dynamic_${Date.now()}`,
   data: { test: true },
   description: 'Using dynamic run ID',
+});
+
+// Example with conditions and additional metadata
+ensure({
+  id: 'critical_payment',
+  flow: 'checkout',
+  runId: 'run_004',
+  data: { amount: 500, currency: 'USD' },
+  conditions: [{ timeout_ms: 3000 }],
+  additional_meta: { priority: 'high', source: 'api' },
+  description: 'High-priority payment with timeout',
 });
 
 console.log('\nWaiting for batches to be sent...');

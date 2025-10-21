@@ -26,6 +26,14 @@ export const ExprSchema = z.object({
 export type Expr = z.infer<typeof ExprSchema>;
 
 /**
+ * Condition for node execution
+ */
+export const NodeConditionSchema = z.object({
+  timeout_ms: z.number().optional(),
+});
+export type NodeCondition = z.infer<typeof NodeConditionSchema>;
+
+/**
  * Event item for batch submission to backend API
  */
 export const EventBatchItemSchema = z.object({
@@ -39,6 +47,8 @@ export const EventBatchItemSchema = z.object({
   dep_ids: z.array(z.string()).optional(),
   filter: ExprSchema.optional(),
   validator: ExprSchema.optional(),
+  conditions: z.array(NodeConditionSchema).optional(),
+  additional_meta: z.record(z.any()).optional(),
 });
 export type EventBatchItem = z.infer<typeof EventBatchItemSchema>;
 
@@ -55,4 +65,6 @@ export interface QueuedEvent {
   dep_ids?: string[] | (() => string[]);
   filter?: boolean | ((data: Record<string, any>) => boolean);
   validator?: (data: Record<string, any>, ctx: Record<string, any>) => boolean;
+  conditions?: NodeCondition[] | (() => NodeCondition[]);
+  additional_meta?: Record<string, any>;
 }

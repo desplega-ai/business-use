@@ -1,0 +1,21 @@
+{
+  "name": "business-use-example-typescript",
+  "version": "0.1.0",
+  "description": "Example usage of the Business-Use TypeScript SDK",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "tsx example.ts",
+    "dev": "tsx watch example.ts"
+  },
+  "dependencies": {
+    "business-use": "file:../../sdk-js"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

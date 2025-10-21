@@ -206,6 +206,9 @@ export class BatchProcessor {
           const depIds = event.dep_ids !== undefined
             ? typeof event.dep_ids === 'function' ? event.dep_ids() : event.dep_ids
             : undefined;
+          const conditions = event.conditions !== undefined
+            ? typeof event.conditions === 'function' ? event.conditions() : event.conditions
+            : undefined;
 
           // Serialize filter if present and callable (send to backend)
           const filterExpr: Expr | undefined =
@@ -231,6 +234,8 @@ export class BatchProcessor {
             dep_ids: depIds,
             filter: filterExpr,
             validator: validatorExpr,
+            conditions: conditions,
+            additional_meta: event.additional_meta,
           };
 
           items.push(item);
