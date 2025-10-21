@@ -16,19 +16,19 @@ A lightweight JavaScript/TypeScript SDK for tracking business events and asserti
 
 ```bash
 # Using pnpm
-pnpm add business-use
+pnpm add @desplega.ai/business-use
 
 # Using npm
-npm install business-use
+npm install @desplega.ai/business-use
 
 # Using yarn
-yarn add business-use
+yarn add @desplega.ai/business-use
 ```
 
 ## Quick Start
 
 ```typescript
-import { initialize, act, assert } from 'business-use';
+import { initialize, act, assert } from '@desplega.ai/business-use';
 
 // Initialize the SDK (call once at app startup)
 initialize({
@@ -209,7 +209,7 @@ The SDK is designed to **never fail your application**:
 The SDK is written in TypeScript and provides full type definitions with **type-safe filter and validator functions**:
 
 ```typescript
-import { initialize, act, assert, type EventBatchItem } from 'business-use';
+import { initialize, act, assert, type EventBatchItem } from '@desplega.ai/business-use';
 
 // Type inference - the data parameter in filter/validator is automatically typed!
 act({

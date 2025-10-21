@@ -1,6 +1,6 @@
 {
-  "name": "business-use",
-  "version": "0.1.1",
+  "name": "@desplega.ai/business-use",
+  "version": "0.1.2",
   "description": "Lightweight JavaScript/TypeScript SDK for Business-Use event tracking and assertions",
   "type": "module",
   "main": "./dist/index.cjs",

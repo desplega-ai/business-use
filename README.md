@@ -73,8 +73,8 @@ pip install business-use
 
 **JavaScript/TypeScript:**
 ```bash
-pnpm add business-use
-# or: npm install business-use
+pnpm add @desplega.ai/business-use
+# or: npm install @desplega.ai/business-use
 ```
 
 ### 3. Track Your First Flow
@@ -105,7 +105,7 @@ ensure(
 
 **JavaScript:**
 ```typescript
-import { initialize, ensure } from 'business-use';
+import { initialize, ensure } from '@desplega.ai/business-use';
 
 // Initialize once at app startup
 initialize({ apiKey: 'your-api-key' });

@@ -9,7 +9,7 @@
  * - Timeout conditions between steps
  */
 
-import { initialize, act, assert, shutdown } from 'business-use';
+import { initialize, act, assert, shutdown } from '@desplega.ai/business-use';
 
 // Initialize the SDK
 console.log('Initializing SDK...');
