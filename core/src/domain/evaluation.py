@@ -7,7 +7,7 @@ the evaluator protocol.
 
 import logging
 from time import time_ns
-from typing import Protocol
+from typing import Any, Protocol
 
 from src.domain.types import LayeredEvents, ValidationItem, ValidationResult
 from src.models import Event, Expr, Node
@@ -23,7 +23,7 @@ class ExprEvaluator(Protocol):
     implementations can be swapped in (Python, CEL, JS, etc).
     """
 
-    def evaluate(self, expr: Expr, data: dict, ctx: dict) -> bool:
+    def evaluate(self, expr: Expr, data: dict[str, Any], ctx: dict[str, Any]) -> bool:
         """Evaluate an expression against data and context.
 
         Args:
@@ -73,11 +73,12 @@ def match_events_to_layers(
         layer_event_ids: list[str] = []
 
         for node_id in layer_node_ids:
-            node = nodes_map.get(node_id)
-            if not node:
+            current_node = nodes_map.get(node_id)
+            if current_node is None:
                 continue
 
-            node.ensure()  # Ensure node is properly initialized
+            current_node = current_node
+            current_node.ensure()  # Ensure node is properly initialized
 
             # Find events for this node
             for event in events:
@@ -85,7 +86,7 @@ def match_events_to_layers(
                     continue
 
                 # If no filter, include the event
-                if not node.filter:
+                if not current_node.filter:
                     layer_event_ids.append(event.id)
                     continue
 
@@ -103,7 +104,7 @@ def match_events_to_layers(
                 # Evaluate filter for each upstream event
                 for upstream_ev in upstream_events:
                     if evaluator.evaluate(
-                        node.filter,
+                        current_node.filter,
                         data=event.data,
                         ctx=upstream_ev.data,
                     ):
@@ -121,6 +122,7 @@ def match_events_to_layers(
 def validate_flow_execution(
     matched: LayeredEvents,
     nodes_map: dict[str, Node],
+    layers: list[list[str]],
 ) -> ValidationResult:
     """Validate that flow execution followed the expected graph.
 
@@ -133,6 +135,7 @@ def validate_flow_execution(
     Args:
         matched: Events matched to layers
         nodes_map: Map of node_id -> Node
+        layers: Topologically sorted layers of node IDs
 
     Returns:
         ValidationResult with status and detailed items
@@ -152,7 +155,7 @@ def validate_flow_execution(
         graph[node_id] = node.dep_ids or []
 
     # Validate each layer
-    for layer_index, layer_node_ids in enumerate(matched["layers"]):
+    for layer_index, layer_node_ids in enumerate(layers):
         layer_ev_ids = matched["layers"][layer_index]
 
         # Get upstream event IDs
@@ -168,18 +171,19 @@ def validate_flow_execution(
         ]
 
         for node_id in layer_node_ids:
-            node = nodes_map.get(node_id)
-            if not node:
+            current_node = nodes_map.get(node_id)
+            if current_node is None:
                 continue
 
-            node.ensure()
+            current_node = current_node
+            current_node.ensure()
 
             # Early skip if previous failed
             if overall_status == "failed":
                 items.append(
                     ValidationItem(
                         node_id=node_id,
-                        dep_node_ids=node.dep_ids or [],
+                        dep_node_ids=current_node.dep_ids or [],
                         message="Skipped due to previous failure",
                         status="skipped",
                         elapsed_ns=0,
@@ -211,7 +215,7 @@ def validate_flow_execution(
                     items.append(
                         ValidationItem(
                             node_id=node_id,
-                            dep_node_ids=node.dep_ids or [],
+                            dep_node_ids=current_node.dep_ids or [],
                             message="No upstream events found for non-root node",
                             status="failed",
                             elapsed_ns=time_ns() - item_start,
@@ -223,12 +227,12 @@ def validate_flow_execution(
                 continue
 
             # No dependencies = first layer, all good
-            if len(node.dep_ids or []) == 0:
+            if len(current_node.dep_ids or []) == 0:
                 items.append(
                     ValidationItem(
                         node_id=node_id,
                         dep_node_ids=[],
-                        message=f"Node {node.id} has no dependencies",
+                        message=f"Node {current_node.id} has no dependencies",
                         status="passed",
                         elapsed_ns=time_ns() - item_start,
                         ev_ids=layer_ev_ids,
@@ -261,9 +265,11 @@ def validate_flow_execution(
                     some_found = True
 
                     # Check conditions (timeout)
-                    if len(node.conditions) == 0:
+                    if len(current_node.conditions) == 0:
                         status = "passed"
-                        message = f"Dependency found for {node.id}, no conditions"
+                        message = (
+                            f"Dependency found for {current_node.id}, no conditions"
+                        )
                         continue
 
                     for cond in node.conditions:
@@ -297,7 +303,7 @@ def validate_flow_execution(
             items.append(
                 ValidationItem(
                     node_id=node_id,
-                    dep_node_ids=node.dep_ids or [],
+                    dep_node_ids=current_node.dep_ids or [],
                     status=status,  # type: ignore
                     message=message,
                     error=error,

@@ -75,7 +75,7 @@ def initialize(
                 return
 
             # Get URL from parameter or environment
-            final_url = url or os.getenv("BUSINESS_USE_URL", "http://localhost:13370")
+            final_url = url or os.getenv("BUSINESS_USE_URL") or "http://localhost:13370"
 
             # Normalize URL
             base_url = final_url.rstrip("/")

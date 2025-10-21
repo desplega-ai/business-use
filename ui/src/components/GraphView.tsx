@@ -12,13 +12,14 @@ import {
   Position,
 } from "@xyflow/react";
 import dagre from "dagre";
-import { Node, NodeType } from "../lib/types";
+import { Node, NodeType, BaseEvalItemOutput } from "../lib/types";
 import "@xyflow/react/dist/style.css";
 
 interface GraphViewProps {
   nodes: Node[];
   selectedNode: Node | null;
   onNodeClick: (node: Node) => void;
+  evalInfo?: BaseEvalItemOutput[];
 }
 
 const nodeTypeColors: Record<NodeType, { bg: string; border: string; text: string }> = {
@@ -70,7 +71,7 @@ const nodeTypes = {
   custom: CustomNode,
 };
 
-function GraphContent({ nodes, selectedNode, onNodeClick }: GraphViewProps) {
+function GraphContent({ nodes, selectedNode, onNodeClick, evalInfo }: GraphViewProps) {
   const { fitView } = useReactFlow();
 
   const { flowNodes, flowEdges } = useMemo(() => {
@@ -163,15 +164,49 @@ function GraphContent({ nodes, selectedNode, onNodeClick }: GraphViewProps) {
         if (nodes.find((n) => n.id === depId)) {
           const isEdgeInFlow = connectedNodeIds.has(node.id) && connectedNodeIds.has(depId);
 
+          // Determine edge status from evaluation info
+          let edgeColor = isEdgeInFlow ? "#7c3aed" : "#94a3b8"; // default purple or gray
+          let edgeStyle: React.CSSProperties["strokeDasharray"] = undefined;
+
+          if (evalInfo && evalInfo.length > 0) {
+            // Find the eval info for the target node
+            const nodeEvalInfo = evalInfo.find((info) => info.node_id === node.id);
+
+            if (nodeEvalInfo) {
+              // Check if this dependency was successful
+              if (nodeEvalInfo.dep_node_ids.includes(depId)) {
+                if (nodeEvalInfo.status === "passed") {
+                  edgeColor = "#22c55e"; // green-500
+                } else if (
+                  nodeEvalInfo.status === "failed" ||
+                  nodeEvalInfo.status === "error" ||
+                  nodeEvalInfo.status === "timed_out"
+                ) {
+                  edgeColor = "#ef4444"; // red-500
+                } else if (nodeEvalInfo.status === "skipped" || nodeEvalInfo.status === "pending") {
+                  edgeColor = "#94a3b8"; // gray-400
+                  edgeStyle = "5 5"; // dashed
+                }
+              }
+            }
+          }
+
           flowEdges.push({
             id: `${depId}-${node.id}`,
             source: depId,
             target: node.id,
             type: "smoothstep",
-            animated: isEdgeInFlow,
+            animated: isEdgeInFlow && !evalInfo, // Only animate when no eval info (normal highlighting mode)
+            markerEnd: {
+              type: "arrowclosed",
+              width: 20,
+              height: 20,
+              color: edgeColor,
+            },
             style: {
-              stroke: isEdgeInFlow ? "#7c3aed" : "#94a3b8",
-              strokeWidth: isEdgeInFlow ? 2.5 : 2,
+              stroke: edgeColor,
+              strokeWidth: isEdgeInFlow || evalInfo ? 2.5 : 2,
+              strokeDasharray: edgeStyle,
             },
           });
         }
@@ -179,7 +214,7 @@ function GraphContent({ nodes, selectedNode, onNodeClick }: GraphViewProps) {
     });
 
     return { flowNodes, flowEdges };
-  }, [nodes, selectedNode]);
+  }, [nodes, selectedNode, evalInfo]);
 
   const onNodeClickHandler = useCallback(
     (_: React.MouseEvent, flowNode: FlowNode) => {

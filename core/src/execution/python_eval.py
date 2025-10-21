@@ -5,6 +5,7 @@ swapped out for other implementations (CEL, JS, etc) at desplega.ai.
 """
 
 import logging
+from typing import Any
 
 from src.models import Expr
 
@@ -18,7 +19,7 @@ class PythonEvaluator:
     Never raises exceptions - all errors are caught and logged.
     """
 
-    def evaluate(self, expr: Expr, data: dict, ctx: dict) -> bool:
+    def evaluate(self, expr: Expr, data: dict[str, Any], ctx: dict[str, Any]) -> bool:
         """Evaluate a Python expression against data and context.
 
         Args:
@@ -73,7 +74,7 @@ class PythonEvaluator:
 class CELEvaluator:
     """CEL expression evaluator (not implemented)."""
 
-    def evaluate(self, expr: Expr, data: dict, ctx: dict) -> bool:
+    def evaluate(self, expr: Expr, data: dict[str, Any], ctx: dict[str, Any]) -> bool:
         logger.error("CEL evaluator not implemented")
         return False
 
@@ -81,6 +82,6 @@ class CELEvaluator:
 class JSEvaluator:
     """JavaScript expression evaluator (not implemented)."""
 
-    def evaluate(self, expr: Expr, data: dict, ctx: dict) -> bool:
+    def evaluate(self, expr: Expr, data: dict[str, Any], ctx: dict[str, Any]) -> bool:
         logger.error("JavaScript evaluator not implemented")
         return False

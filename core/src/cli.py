@@ -716,6 +716,185 @@ def export_nodes(flow: str, output: Path | None) -> None:
 
 
 @cli.command()
+@click.option("--flow", default=None, help="Filter by flow name")
+@click.option("--run-id", default=None, help="Filter by run ID")
+@click.option("--limit", default=10, help="Number of results to show")
+@click.option("--json-output", is_flag=True, help="Output results as JSON")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed execution info")
+def runs(
+    flow: str | None,
+    run_id: str | None,
+    limit: int,
+    json_output: bool,
+    verbose: bool,
+) -> None:
+    """View stored evaluation runs from the database.
+
+    Shows past evaluations that have been stored automatically or via API.
+    You can filter by flow name or run ID.
+
+    Examples:
+        cli runs                          # Show last 10 runs
+        cli runs --flow checkout          # Show runs for checkout flow
+        cli runs --run-id run_123         # Show specific run
+        cli runs --limit 20               # Show last 20 runs
+        cli runs --verbose                # Show detailed execution info
+        cli runs --json-output            # Output as JSON
+    """
+    import asyncio
+
+    from sqlalchemy import desc
+    from sqlmodel import select
+
+    from src.db.transactional import transactional
+    from src.models import EvalOutput
+
+    async def show_runs() -> None:
+        try:
+            async with transactional() as session:
+                stmt = select(EvalOutput)
+
+                if flow:
+                    stmt = stmt.where(EvalOutput.flow == flow)
+
+                if run_id:
+                    stmt = stmt.where(EvalOutput.run_id == run_id)
+
+                stmt = stmt.order_by(desc(EvalOutput.created_at)).limit(limit)  # type: ignore
+
+                result = await session.execute(stmt)
+                eval_outputs = result.scalars().all()
+
+            # Ensure output dicts are converted to objects
+            for eval_out in eval_outputs:
+                eval_out.ensure()
+
+            if not eval_outputs:
+                click.secho("No evaluation runs found", fg="yellow")
+                return
+
+            if json_output:
+                # Output as JSON
+                output = []
+                for eval_out in eval_outputs:
+                    output.append(
+                        {
+                            "id": eval_out.id,
+                            "flow": eval_out.flow,
+                            "run_id": eval_out.run_id,
+                            "trigger_ev_id": eval_out.trigger_ev_id,
+                            "status": eval_out.output.status,
+                            "created_at": eval_out.created_at,
+                            "elapsed_ms": eval_out.output.elapsed_ns / 1_000_000,
+                            "events_processed": len(eval_out.output.ev_ids),
+                            "exec_info": [
+                                {
+                                    "node_id": item.node_id,
+                                    "status": item.status,
+                                    "message": item.message,
+                                    "error": item.error,
+                                }
+                                for item in eval_out.output.exec_info
+                            ]
+                            if verbose
+                            else None,
+                        }
+                    )
+                click.echo(json.dumps(output, indent=2, default=str))
+            else:
+                # Human-readable output
+                click.echo(f"\n{'=' * 70}")
+                click.secho(
+                    f"Showing {len(eval_outputs)} evaluation run(s)",
+                    fg="cyan",
+                    bold=True,
+                )
+                click.echo(f"{'=' * 70}\n")
+
+                for eval_out in eval_outputs:
+                    status_color = (
+                        "green" if eval_out.output.status == "passed" else "red"
+                    )
+
+                    click.echo(f"Run ID: {eval_out.run_id}")
+                    click.echo(f"Flow: {eval_out.flow}")
+                    click.secho(
+                        f"Status: {eval_out.output.status.upper()}", fg=status_color
+                    )
+                    click.echo(
+                        f"Created: {eval_out.created_at.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+                    click.echo(
+                        f"Elapsed: {eval_out.output.elapsed_ns / 1_000_000:.2f}ms"
+                    )
+                    click.echo(f"Events: {len(eval_out.output.ev_ids)}")
+
+                    if verbose and eval_out.output.exec_info:
+                        click.echo("\nExecution Details:")
+                        click.echo("-" * 60)
+
+                        passed = sum(
+                            1
+                            for item in eval_out.output.exec_info
+                            if item.status == "passed"
+                        )
+                        failed = sum(
+                            1
+                            for item in eval_out.output.exec_info
+                            if item.status == "failed"
+                        )
+                        skipped = sum(
+                            1
+                            for item in eval_out.output.exec_info
+                            if item.status == "skipped"
+                        )
+
+                        click.echo("Summary:")
+                        click.secho(f"  ✓ Passed: {passed}", fg="green")
+                        if failed > 0:
+                            click.secho(f"  ✗ Failed: {failed}", fg="red")
+                        if skipped > 0:
+                            click.secho(f"  ⊘ Skipped: {skipped}", fg="yellow")
+
+                        click.echo("\nNodes:")
+                        for item in eval_out.output.exec_info:
+                            item_status_color = (
+                                "green"
+                                if item.status == "passed"
+                                else ("yellow" if item.status == "skipped" else "red")
+                            )
+                            status_symbol = (
+                                "✓"
+                                if item.status == "passed"
+                                else ("⊘" if item.status == "skipped" else "✗")
+                            )
+
+                            msg = f"  [{status_symbol}] {item.node_id}"
+                            if item.dep_node_ids:
+                                msg += f" (depends on: {', '.join(item.dep_node_ids)})"
+
+                            click.secho(msg, fg=item_status_color)
+
+                            if item.message and item.status != "passed":
+                                click.echo(f"      Message: {item.message}")
+                            if item.error:
+                                click.secho(f"      Error: {item.error}", fg="red")
+
+                    click.echo("-" * 70)
+                    click.echo()
+
+                if not verbose:
+                    click.echo("Use --verbose to see detailed execution info\n")
+
+        except Exception as e:
+            click.secho(f"Error: {e}", fg="red", err=True)
+            log.exception("Failed to show runs")
+            raise click.Abort() from e
+
+    asyncio.run(show_runs())
+
+
+@cli.command()
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
 def validate_nodes(path: Path) -> None:
     """Validate YAML node definition file(s) without syncing to database.

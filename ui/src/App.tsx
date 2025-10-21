@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { ApiSetup } from "./components/ApiSetup";
 import { GraphView } from "./components/GraphView";
 import { NodeDetails } from "./components/NodeDetails";
 import { useNodes } from "./lib/queries";
 import { apiClient } from "./lib/api";
-import { Node } from "./lib/types";
+import { Node, BaseEvalItemOutput } from "./lib/types";
 import { Button } from "./components/ui/button";
 import { Loader2Icon, LogOutIcon } from "lucide-react";
 
@@ -23,6 +24,9 @@ function MainApp() {
     return !!apiClient.getConfig();
   });
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [selectedEvalInfo, setSelectedEvalInfo] = useState<BaseEvalItemOutput[] | undefined>(
+    undefined
+  );
 
   const { data: nodes, isLoading, error } = useNodes();
 
@@ -89,12 +93,27 @@ function MainApp() {
       </div>
 
       <div className="flex-1 flex overflow-hidden min-h-0">
-        <div className="flex-1 border-r">
-          <GraphView nodes={nodes} selectedNode={selectedNode} onNodeClick={setSelectedNode} />
-        </div>
-        <div className="w-96 bg-white overflow-hidden">
-          <NodeDetails node={selectedNode} />
-        </div>
+        <PanelGroup direction="horizontal">
+          <Panel defaultSize={60} minSize={30}>
+            <GraphView
+              nodes={nodes}
+              selectedNode={selectedNode}
+              onNodeClick={setSelectedNode}
+              evalInfo={selectedEvalInfo}
+            />
+          </Panel>
+          <PanelResizeHandle className="w-1 bg-gray-200 hover:bg-blue-400 transition-colors" />
+          <Panel defaultSize={40} minSize={20} maxSize={60}>
+            <div className="h-full bg-white overflow-hidden">
+              <NodeDetails
+                node={selectedNode}
+                onEvalInfoChange={setSelectedEvalInfo}
+                onNodeSelect={setSelectedNode}
+                allNodes={nodes}
+              />
+            </div>
+          </Panel>
+        </PanelGroup>
       </div>
     </div>
   );

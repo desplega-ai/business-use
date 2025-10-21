@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Test script demonstrating a complex e-commerce order fulfillment flow.
+Test script demonstrating a realistic payment flow with partial success and failure.
 
-This script creates a realistic flow with multiple branches, dependencies,
-and validation steps. It then sends batch events and evaluates the flow.
+This script creates a simpler, more realistic flow where payment processing
+succeeds initially but fails during settlement, demonstrating partial execution.
 """
 
 import asyncio
@@ -54,222 +54,110 @@ async def send_batch_events(
     return result
 
 
-def create_complex_flow_events(run_id: str) -> list[dict[str, Any]]:
-    """Create a complex e-commerce order fulfillment flow with events.
+def create_payment_flow_events(run_id: str) -> list[dict[str, Any]]:
+    """Create a payment processing flow where it succeeds halfway then fails.
 
     Flow structure:
-    1. order_created (trigger)
-    2. validate_inventory (hook) + validate_payment (hook) - parallel
-    3. reserve_inventory (act) + charge_payment (act) - parallel, depend on validations
-    4. confirm_order (hook) - depends on both reserves
-    5. notify_warehouse (act) + notify_customer (act) - parallel, depend on confirmation
-    6. ship_order (act) - depends on warehouse notification
-    7. update_tracking (hook) - depends on shipping
+    1. payment_initiated (trigger) ✓
+    2. validate_card (hook) ✓
+    3. authorize_payment (act) ✓
+    4. settle_payment (act) ✗ FAILS - no event sent (settlement timeout/error)
+    5. send_receipt (act) ⊘ SKIPPED - depends on successful settlement
+
+    This demonstrates a realistic scenario where authorization succeeds
+    but settlement never completes (timeout, service unavailable, etc.)
     """
     base_ts = int(time.time() * 1_000_000_000)  # nanoseconds
-    flow = "order_fulfillment"
+    flow = "payment_processing"
 
     return [
-        # 1. Order created (trigger)
+        # 1. Payment initiated (trigger) - SUCCEEDS
         {
             "flow": flow,
-            "id": "order_created",
-            "description": "Customer order created",
+            "id": "payment_initiated",
+            "description": "Customer initiated payment",
             "run_id": run_id,
             "type": "trigger",
             "data": {
-                "order_id": "ORD-12345",
+                "payment_id": "PAY-12345",
+                "amount": 99.99,
+                "currency": "USD",
                 "customer_id": "CUST-789",
-                "items": [
-                    {"sku": "WIDGET-A", "quantity": 2, "price": 29.99},
-                    {"sku": "GADGET-B", "quantity": 1, "price": 149.99},
-                ],
-                "total": 209.97,
-                "payment_method": "credit_card",
-            },
-            "filter": {
-                "engine": "python",
-                "script": "data.get('order_id') is not None",
             },
             "dep_ids": [],
             "ts": base_ts,
         },
-        # 2a. Validate inventory (hook)
+        # 2. Validate card (hook) - SUCCEEDS
         {
             "flow": flow,
-            "id": "validate_inventory",
-            "description": "Validate items are in stock",
+            "id": "validate_card",
+            "description": "Validate card details and security checks",
             "run_id": run_id,
             "type": "hook",
             "data": {
-                "inventory_check": "passed",
-                "available": {"WIDGET-A": 150, "GADGET-B": 25},
+                "card_valid": True,
+                "card_type": "visa",
+                "last4": "4242",
+                "cvv_check": "passed",
             },
             "validator": {
                 "engine": "python",
-                "script": "data.get('inventory_check') == 'passed'",
+                "script": "data.get('card_valid') == True",
             },
-            "dep_ids": ["order_created"],
-            "ts": base_ts + 100_000_000,  # +100ms
+            "dep_ids": ["payment_initiated"],
+            "ts": base_ts + 50_000_000,  # +50ms
         },
-        # 2b. Validate payment (hook) - parallel with inventory
+        # 3. Authorize payment (act) - SUCCEEDS
         {
             "flow": flow,
-            "id": "validate_payment",
-            "description": "Validate payment method and available funds",
-            "run_id": run_id,
-            "type": "hook",
-            "data": {
-                "payment_valid": True,
-                "card_last4": "4242",
-                "available_credit": 5000.0,
-            },
-            "validator": {
-                "engine": "python",
-                "script": "data.get('payment_valid') == True",
-            },
-            "dep_ids": ["order_created"],
-            "ts": base_ts + 120_000_000,  # +120ms
-        },
-        # 3a. Reserve inventory (act)
-        {
-            "flow": flow,
-            "id": "reserve_inventory",
-            "description": "Reserve inventory for order",
+            "id": "authorize_payment",
+            "description": "Authorize payment with card processor",
             "run_id": run_id,
             "type": "act",
             "data": {
-                "reservation_id": "RES-99887",
-                "reserved_items": ["WIDGET-A", "GADGET-B"],
+                "authorization_code": "AUTH-ABC123",
+                "authorized": True,
+                "available_balance": 150.00,
             },
             "filter": {
                 "engine": "python",
-                "script": "data.get('reservation_id') is not None",
+                "script": "data.get('authorized') == True",
             },
-            "dep_ids": ["validate_inventory"],
-            "ts": base_ts + 250_000_000,  # +250ms
+            "dep_ids": ["validate_card"],
+            "ts": base_ts + 200_000_000,  # +200ms
         },
-        # 3b. Charge payment (act) - parallel with reserve
+        # 4. Settle payment (act) - node definition only, NO EVENT SENT
+        # This creates the node in the graph but doesn't send the event,
+        # simulating a settlement timeout or service unavailability
         {
             "flow": flow,
-            "id": "charge_payment",
-            "description": "Charge customer payment method",
+            "id": "settle_payment",
+            "description": "Settle payment with bank",
             "run_id": run_id,
             "type": "act",
-            "data": {
-                "transaction_id": "TXN-554433",
-                "amount_charged": 209.97,
-                "status": "succeeded",
-            },
-            "filter": {
-                "engine": "python",
-                "script": "data.get('status') == 'succeeded'",
-            },
-            "dep_ids": ["validate_payment"],
-            "ts": base_ts + 300_000_000,  # +300ms
-        },
-        # 4. Confirm order (hook)
-        {
-            "flow": flow,
-            "id": "confirm_order",
-            "description": "Confirm order after inventory and payment secured",
-            "run_id": run_id,
-            "type": "hook",
-            "data": {
-                "order_confirmed": True,
-                "confirmation_number": "CONF-ABC123",
-            },
-            "validator": {
-                "engine": "python",
-                "script": "data.get('order_confirmed') == True",
-            },
-            "dep_ids": ["reserve_inventory", "charge_payment"],
-            "ts": base_ts + 400_000_000,  # +400ms
-        },
-        # 5a. Notify warehouse (act)
-        {
-            "flow": flow,
-            "id": "notify_warehouse",
-            "description": "Send fulfillment notification to warehouse",
-            "run_id": run_id,
-            "type": "act",
-            "data": {
-                "warehouse_id": "WH-001",
-                "notification_sent": True,
-                "pick_list_id": "PICK-7788",
-            },
-            "filter": {
-                "engine": "python",
-                "script": "data.get('notification_sent') == True",
-            },
-            "dep_ids": ["confirm_order"],
+            "data": {},  # Empty data - this node creates the definition
+            "dep_ids": ["authorize_payment"],
             "ts": base_ts + 500_000_000,  # +500ms
         },
-        # 5b. Notify customer (act) - parallel with warehouse
+        # 5. Send receipt (act) - node definition only, NO EVENT SENT
+        # This would depend on settlement, so it also doesn't execute
         {
             "flow": flow,
-            "id": "notify_customer",
-            "description": "Send order confirmation email to customer",
+            "id": "send_receipt",
+            "description": "Send payment receipt to customer",
             "run_id": run_id,
             "type": "act",
-            "data": {
-                "email_sent": True,
-                "email_id": "EMAIL-9988",
-                "customer_email": "customer@example.com",
-            },
-            "filter": {
-                "engine": "python",
-                "script": "data.get('email_sent') == True",
-            },
-            "dep_ids": ["confirm_order"],
-            "ts": base_ts + 520_000_000,  # +520ms
-        },
-        # 6. Ship order (act)
-        {
-            "flow": flow,
-            "id": "ship_order",
-            "description": "Ship order from warehouse",
-            "run_id": run_id,
-            "type": "act",
-            "data": {
-                "shipped": True,
-                "carrier": "FedEx",
-                "tracking_number": "1Z999AA10123456784",
-                "estimated_delivery": "2025-10-24",
-            },
-            "filter": {
-                "engine": "python",
-                "script": "data.get('shipped') == True",
-            },
-            "dep_ids": ["notify_warehouse"],
-            "ts": base_ts
-            + 3600_000_000_000,  # +1 hour (simulating warehouse processing)
-        },
-        # 7. Update tracking (hook)
-        {
-            "flow": flow,
-            "id": "update_tracking",
-            "description": "Update order with tracking information",
-            "run_id": run_id,
-            "type": "hook",
-            "data": {
-                "tracking_updated": True,
-                "tracking_url": "https://fedex.com/track/1Z999AA10123456784",
-            },
-            "validator": {
-                "engine": "python",
-                "script": "data.get('tracking_updated') == True",
-            },
-            "dep_ids": ["ship_order"],
-            "ts": base_ts + 3650_000_000_000,  # +50ms after shipping
+            "data": {},  # Empty data - this node creates the definition
+            "dep_ids": ["settle_payment"],
+            "ts": base_ts + 600_000_000,  # +600ms
         },
     ]
 
 
 async def main() -> None:
-    """Main entry point - demonstrates complex flow with batch events and evaluation."""
+    """Main entry point - demonstrates realistic partial failure flow."""
     print("=" * 70)
-    print("Complex E-Commerce Order Fulfillment Flow Test")
+    print("Payment Processing Flow Test (Partial Success + Failure)")
     print("=" * 70)
     print(f"\nAPI URL: {API_BASE_URL}")
     print(f"API Key: {API_KEY[:10]}..." if len(API_KEY) > 10 else "API Key: (not set)")
@@ -280,15 +168,15 @@ async def main() -> None:
     print(f"Run ID: {run_id}\n")
 
     # Create events (nodes will be auto-created via batch endpoint with source='code')
-    events = create_complex_flow_events(run_id)
-    print(f"Created {len(events)} events for order fulfillment flow:")
-    print("  1. order_created (trigger)")
-    print("  2. validate_inventory + validate_payment (parallel hooks)")
-    print("  3. reserve_inventory + charge_payment (parallel acts)")
-    print("  4. confirm_order (hook - joins both paths)")
-    print("  5. notify_warehouse + notify_customer (parallel acts)")
-    print("  6. ship_order (act - depends on warehouse)")
-    print("  7. update_tracking (hook - final step)")
+    events = create_payment_flow_events(run_id)
+    print(f"Created {len(events)} events for payment processing flow:")
+    print("  1. payment_initiated (trigger) ✓")
+    print("  2. validate_card (hook) ✓")
+    print("  3. authorize_payment (act) ✓")
+    print("  4. settle_payment (act) ✗ FAILS - settlement rejected")
+    print("  5. send_receipt (act) ⊘ SKIPPED - no event sent\n")
+    print("This simulates a realistic scenario where authorization succeeds")
+    print("but settlement fails (e.g., fraud detection, insufficient funds).")
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         # Send batch events (this auto-creates nodes with source='code')
@@ -306,7 +194,7 @@ async def main() -> None:
         print(f"\n[INFO] Evaluating flow run: {run_id}")
         print("-" * 70)
         try:
-            eval_result = await run_evaluation(client, run_id, "order_fulfillment")
+            eval_result = await run_evaluation(client, run_id, "payment_processing")
 
             # Display results
             status = eval_result.get("status", "unknown")
@@ -340,8 +228,8 @@ async def main() -> None:
                     for item in exec_info:
                         if item.get("status") == "failed":
                             node_id = item.get("node_id")
-                            error = item.get("error", "Unknown error")
-                            print(f"  - {node_id}: {error}")
+                            message = item.get("message", "Unknown error")
+                            print(f"  - {node_id}: {message}")
 
                 # Show detailed execution
                 print("\nDetailed Execution:")

@@ -98,6 +98,7 @@ async def eval_flow_run(
     result = validate_flow_execution(
         matched=matched,
         nodes_map=flow_graph["nodes"],
+        layers=layers,
     )
 
     # 7. Convert to output model

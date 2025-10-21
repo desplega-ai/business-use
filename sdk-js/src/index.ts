@@ -45,4 +45,7 @@ export type {
   NodeCondition,
 } from './models.js';
 
-export const version = '0.1.0';
+// @ts-ignore - package.json is imported at build time
+import packageJson from '../package.json';
+
+export const version = packageJson.version;

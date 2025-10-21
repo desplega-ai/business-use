@@ -30,11 +30,15 @@ Example:
 """
 
 import logging
+from importlib.metadata import version
 
 from .client import ensure, initialize, shutdown
 from .models import NodeCondition
 
-__version__ = "0.1.0"
+try:
+    __version__ = version("business-use")
+except Exception:
+    __version__ = "0.0.0"  # Fallback for development
 
 __all__ = [
     "initialize",

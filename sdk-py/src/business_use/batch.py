@@ -260,6 +260,8 @@ class BatchProcessor:
                     # Remove trailing comma or parenthesis if present
                     body = body.rstrip(",).;")
                     return Expr(engine="python", script=body)
+                # Fallback if no colon found in lambda
+                return Expr(engine="python", script=source)
 
             # Handle regular functions
             else:
@@ -294,7 +296,7 @@ class BatchProcessor:
                             continue
                     else:
                         # We're in a docstring, check if it closes
-                        if docstring_delim in stripped:
+                        if docstring_delim is not None and docstring_delim in stripped:
                             in_docstring = False
                         continue
 

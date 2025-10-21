@@ -44,8 +44,10 @@ install:
 	@echo ""
 	@echo "✅ All dependencies installed!"
 
-# Format all projects
-format: format-core format-py format-js format-ui
+# Format all projects (in parallel)
+format:
+	@echo "🎨 Formatting all projects in parallel..."
+	@$(MAKE) -j4 format-core format-py format-js format-ui
 	@echo ""
 	@echo "✅ All projects formatted!"
 
@@ -73,8 +75,10 @@ format-ui:
 	fi
 	cd ui && pnpm format
 
-# Lint all projects
-lint: lint-core lint-py lint-js lint-ui
+# Lint all projects (in parallel)
+lint:
+	@echo "🔍 Linting all projects in parallel..."
+	@$(MAKE) -j4 lint-core lint-py lint-js lint-ui
 	@echo ""
 	@echo "✅ All projects linted!"
 
@@ -102,8 +106,10 @@ lint-ui:
 	fi
 	cd ui && pnpm lint:fix
 
-# Type checking
-typecheck: typecheck-core typecheck-py typecheck-js typecheck-ui
+# Type checking (in parallel)
+typecheck:
+	@echo "🔎 Type checking all projects in parallel..."
+	@$(MAKE) -j4 typecheck-core typecheck-py typecheck-js typecheck-ui
 	@echo ""
 	@echo "✅ All projects type-checked!"
 
@@ -131,8 +137,10 @@ typecheck-ui:
 	fi
 	cd ui && pnpm typecheck
 
-# Run tests
-test: test-core test-py test-js
+# Run tests (in parallel)
+test:
+	@echo "🧪 Running tests in all projects in parallel..."
+	@$(MAKE) -j3 test-core test-py test-js
 	@echo ""
 	@echo "✅ All tests passed!"
 
@@ -172,6 +180,13 @@ clean:
 	@echo ""
 	@echo "✅ Cleanup complete!"
 
+# Format and lint in parallel
+format-lint:
+	@echo "🚀 Running format and lint in parallel..."
+	@$(MAKE) -j2 format lint
+	@echo ""
+	@echo "✅ Format and lint complete!"
+
 # Run everything (format, lint, typecheck, test)
 all: format lint typecheck test
 	@echo ""
@@ -182,41 +197,51 @@ ci: format-check lint-check typecheck test
 	@echo ""
 	@echo "✅ CI checks passed!"
 
-# Format check (without fixing)
+# Format check (without fixing, in parallel)
 format-check:
-	@echo "🔍 Checking code formatting..."
-	@echo ""
-	@echo "▶ Core backend..."
-	cd core && uv run ruff format --check src/
-	@echo ""
-	@echo "▶ Python SDK..."
-	cd sdk-py && uv run ruff format --check src/ tests/
-	@echo ""
-	@echo "▶ JavaScript SDK..."
-	cd sdk-js && pnpm format:check
-	@echo ""
-	@echo "▶ UI..."
-	cd ui && pnpm format:check
+	@echo "🔍 Checking code formatting in parallel..."
+	@$(MAKE) -j4 format-check-core format-check-py format-check-js format-check-ui
 	@echo ""
 	@echo "✅ All formatting is correct!"
 
-# Lint check (without fixing)
+format-check-core:
+	@echo "▶ Checking core backend formatting..."
+	@cd core && uv run ruff format --check src/
+
+format-check-py:
+	@echo "▶ Checking Python SDK formatting..."
+	@cd sdk-py && uv run ruff format --check src/ tests/
+
+format-check-js:
+	@echo "▶ Checking JavaScript SDK formatting..."
+	@cd sdk-js && pnpm format:check
+
+format-check-ui:
+	@echo "▶ Checking UI formatting..."
+	@cd ui && pnpm format:check
+
+# Lint check (without fixing, in parallel)
 lint-check:
-	@echo "🔍 Checking linting..."
-	@echo ""
-	@echo "▶ Core backend..."
-	cd core && uv run ruff check src/
-	@echo ""
-	@echo "▶ Python SDK..."
-	cd sdk-py && uv run ruff check src/ tests/
-	@echo ""
-	@echo "▶ JavaScript SDK..."
-	cd sdk-js && pnpm lint
-	@echo ""
-	@echo "▶ UI..."
-	cd ui && pnpm lint
+	@echo "🔍 Checking linting in parallel..."
+	@$(MAKE) -j4 lint-check-core lint-check-py lint-check-js lint-check-ui
 	@echo ""
 	@echo "✅ All linting is correct!"
+
+lint-check-core:
+	@echo "▶ Checking core backend linting..."
+	@cd core && uv run ruff check src/
+
+lint-check-py:
+	@echo "▶ Checking Python SDK linting..."
+	@cd sdk-py && uv run ruff check src/ tests/
+
+lint-check-js:
+	@echo "▶ Checking JavaScript SDK linting..."
+	@cd sdk-js && pnpm lint
+
+lint-check-ui:
+	@echo "▶ Checking UI linting..."
+	@cd ui && pnpm lint
 
 # Development servers
 serve-core:

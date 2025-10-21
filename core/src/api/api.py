@@ -194,6 +194,8 @@ async def run_eval(
     - run_id + flow (new): Evaluates entire run
 
     The new API is preferred and more efficient.
+
+    Results are automatically persisted to the database.
     """
     from src.eval import eval_event, eval_flow_run
 
@@ -204,6 +206,21 @@ async def run_eval(
             flow=body.flow,
             start_node_id=body.start_node_id,
         )
+
+        # Persist evaluation result to database
+        async with transactional() as session:
+            eval_output = EvalOutput(
+                id=str(uuid4()),
+                flow=body.flow,
+                run_id=body.run_id,
+                trigger_ev_id=None,
+                output=result,
+                created_at=now(),
+                status="active",
+            )
+            session.add(eval_output)
+            await session.commit()
+
         return result
 
     # Legacy API
@@ -212,6 +229,27 @@ async def run_eval(
             event_id=body.ev_id,
             whole_graph=body.whole_graph,
         )
+
+        # Persist evaluation result to database
+        async with transactional() as session:
+            # Fetch the event to get flow and run_id
+            from src.adapters.sqlite import SqliteEventStorage
+
+            storage = SqliteEventStorage()
+            event = await storage.get_event_by_id(body.ev_id, session)
+
+            eval_output = EvalOutput(
+                id=str(uuid4()),
+                flow=event.flow if event else "unknown",
+                run_id=event.run_id if event else None,
+                trigger_ev_id=body.ev_id,
+                output=result,
+                created_at=now(),
+                status="active",
+            )
+            session.add(eval_output)
+            await session.commit()
+
         return result
 
     raise HTTPException(
