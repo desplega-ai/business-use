@@ -418,7 +418,7 @@ def _check_connection(api_key: str, base_url: str) -> bool:
     try:
         with httpx.Client(timeout=10.0) as client:
             response = client.get(
-                f"{base_url}/v1/check",
+                f"{base_url}/v1/status",
                 headers={"X-Api-Key": api_key},
             )
 

@@ -620,7 +620,7 @@ uv sync  # Reinstalls in editable mode
 When running locally, the backend exposes:
 
 - `GET /health` - Health check (no auth required)
-- `GET /v1/check` - Verify API key
+- `GET /v1/status` - Verify API key
 - `POST /v1/events-batch` - Batch event ingestion
 - `GET /v1/events` - Query events
 - `GET /v1/nodes` - Query nodes
