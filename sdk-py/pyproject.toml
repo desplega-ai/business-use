@@ -1,6 +1,6 @@
 [project]
 name = "business-use"
-version = "0.3.0"
+version = "0.3.1"
 description = "Lightweight Python SDK for Business-Use event tracking and assertions"
 readme = "README.md"
 authors = [
