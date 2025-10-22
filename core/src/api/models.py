@@ -68,25 +68,15 @@ class NodeUpdateSchema(NodeBaseSchema):
 
 
 class EvalInput(BaseModel):
-    """Evaluation input - supports both old and new API.
+    """Evaluation input.
 
-    Old API (legacy):
-        ev_id: Event ID to start evaluation from
-        whole_graph: Whether to evaluate entire graph or just downstream
-
-    New API (preferred):
+    Args:
         run_id: Run identifier
         flow: Flow identifier
         start_node_id: Optional node to start from (for subgraph eval)
-
-    Note: Either ev_id OR (run_id + flow) must be provided.
     """
 
-    # Legacy API
-    ev_id: str | None = None
-    whole_graph: bool = False
-
-    # New API (preferred)
+    # Required fields
     run_id: str | None = None
     flow: str | None = None
     start_node_id: str | None = None

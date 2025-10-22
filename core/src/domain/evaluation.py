@@ -46,8 +46,8 @@ def match_events_to_layers(
 ) -> LayeredEvents:
     """Match events to graph layers based on run_id, flow, and filters.
 
-    This is the NEW implementation that uses run_id + flow tuple instead
-    of time-window heuristics.
+    This implementation uses run_id + flow tuple and supports multiple
+    upstream dependencies with Ctx structure.
 
     Args:
         events: List of events (already filtered by run_id + flow)
@@ -65,6 +65,10 @@ def match_events_to_layers(
         >>> matched["layers"]
         [["e1"], ["e2", "e3"]]
     """
+    from typing import cast
+
+    from src.domain.types import Ctx, DepData
+
     final_ev_list: list[list[str]] = []
     events_map: dict[str, Event] = {ev.id: ev for ev in events}
 
@@ -77,7 +81,6 @@ def match_events_to_layers(
             if current_node is None:
                 continue
 
-            current_node = current_node
             current_node.ensure()  # Ensure node is properly initialized
 
             # Find events for this node
@@ -85,31 +88,43 @@ def match_events_to_layers(
                 if event.node_id != node_id:
                     continue
 
-                # If no filter, include the event
-                if not current_node.filter:
-                    layer_event_ids.append(event.id)
-                    continue
+                # Build context from ALL upstream dependencies
+                ctx: Ctx = {"deps": []}
 
-                # If filter exists, evaluate it against upstream events
-                # Find the last layer with events (upstream)
-                upstream_events: list[Event] = []
-                for prev_layer_index in range(layer_index - 1, -1, -1):
-                    if final_ev_list[prev_layer_index]:
-                        upstream_event_ids = final_ev_list[prev_layer_index]
-                        upstream_events = [
-                            events_map[ev_id] for ev_id in upstream_event_ids
-                        ]
-                        break
+                if current_node.dep_ids:
+                    # For each dep_id, find ALL matching events from previous layers
+                    for dep_id in current_node.dep_ids:
+                        # Search all previous layers for events matching this dep_id
+                        for prev_layer_index in range(layer_index):
+                            prev_layer_event_ids = final_ev_list[prev_layer_index]
+                            for prev_event_id in prev_layer_event_ids:
+                                prev_event = events_map[prev_event_id]
+                                if prev_event.node_id == dep_id:
+                                    # Add this event to deps
+                                    dep_data: DepData = {
+                                        "flow": prev_event.flow,
+                                        "id": prev_event.node_id,
+                                        "data": prev_event.data,
+                                    }
+                                    ctx["deps"].append(dep_data)
 
-                # Evaluate filter for each upstream event
-                for upstream_ev in upstream_events:
-                    if evaluator.evaluate(
+                # Evaluate filter if present
+                include_event = True
+                if current_node.filter:
+                    # Evaluate filter with proper Ctx
+                    filter_result = evaluator.evaluate(
                         current_node.filter,
                         data=event.data,
-                        ctx=upstream_ev.data,
-                    ):
-                        layer_event_ids.append(event.id)
-                        break  # Only add event once even if multiple upstream match
+                        ctx=cast(dict[str, Any], ctx),
+                    )
+                    # If filter returns False, skip this event
+                    # (node will get "passed" status during validation)
+                    if not filter_result:
+                        include_event = False
+
+                # Include event only if filter passed (or no filter)
+                if include_event:
+                    layer_event_ids.append(event.id)
 
         final_ev_list.append(layer_event_ids)
 
@@ -123,6 +138,7 @@ def validate_flow_execution(
     matched: LayeredEvents,
     nodes_map: dict[str, Node],
     layers: list[list[str]],
+    evaluator: ExprEvaluator | None = None,
 ) -> ValidationResult:
     """Validate that flow execution followed the expected graph.
 
@@ -130,16 +146,21 @@ def validate_flow_execution(
     - All required nodes have events
     - Dependencies are satisfied
     - Timeout conditions are met
-    - Validators pass (future)
+    - Validators pass
 
     Args:
         matched: Events matched to layers
         nodes_map: Map of node_id -> Node
         layers: Topologically sorted layers of node IDs
+        evaluator: Optional expression evaluator for validator evaluation
 
     Returns:
         ValidationResult with status and detailed items
     """
+    from typing import cast
+
+    from src.domain.types import Ctx, DepData
+
     start_time = time_ns()
     items: list[ValidationItem] = []
     all_ev_ids: list[str] = []
@@ -158,24 +179,11 @@ def validate_flow_execution(
     for layer_index, layer_node_ids in enumerate(layers):
         layer_ev_ids = matched["layers"][layer_index]
 
-        # Get upstream event IDs
-        upstream_ev_ids: list[str] = []
-        for prev_index in range(layer_index - 1, -1, -1):
-            if matched["layers"][prev_index]:
-                upstream_ev_ids = matched["layers"][prev_index]
-                break
-
-        # Get upstream events
-        upstream_events: list[Event] = [
-            matched["events"][ev_id] for ev_id in upstream_ev_ids
-        ]
-
         for node_id in layer_node_ids:
             current_node = nodes_map.get(node_id)
             if current_node is None:
                 continue
 
-            current_node = current_node
             current_node.ensure()
 
             # Early skip if previous failed
@@ -188,64 +196,12 @@ def validate_flow_execution(
                         status="skipped",
                         elapsed_ns=0,
                         ev_ids=layer_ev_ids,
-                        upstream_ev_ids=upstream_ev_ids,
+                        upstream_ev_ids=[],
                     )
                 )
                 continue
 
             item_start = time_ns()
-
-            # Check if upstream events exist (for non-first layers)
-            if len(upstream_events) == 0:
-                if layer_index == 0:
-                    # First layer, no upstream needed
-                    items.append(
-                        ValidationItem(
-                            node_id=node_id,
-                            dep_node_ids=[],
-                            message="Root node, no upstream dependencies",
-                            status="passed",
-                            elapsed_ns=time_ns() - item_start,
-                            ev_ids=layer_ev_ids,
-                            upstream_ev_ids=[],
-                        )
-                    )
-                else:
-                    # Non-first layer should have upstream
-                    items.append(
-                        ValidationItem(
-                            node_id=node_id,
-                            dep_node_ids=current_node.dep_ids or [],
-                            message="No upstream events found for non-root node",
-                            status="failed",
-                            elapsed_ns=time_ns() - item_start,
-                            ev_ids=layer_ev_ids,
-                            upstream_ev_ids=[],
-                        )
-                    )
-                    overall_status = "failed"
-                continue
-
-            # No dependencies = first layer, all good
-            if len(current_node.dep_ids or []) == 0:
-                items.append(
-                    ValidationItem(
-                        node_id=node_id,
-                        dep_node_ids=[],
-                        message=f"Node {current_node.id} has no dependencies",
-                        status="passed",
-                        elapsed_ns=time_ns() - item_start,
-                        ev_ids=layer_ev_ids,
-                        upstream_ev_ids=upstream_ev_ids,
-                    )
-                )
-                continue
-
-            # Validate conditions (timeouts, etc)
-            status: str = "running"
-            error: str | None = None
-            message: str | None = None
-            some_found = False
 
             # Get current layer events for this node
             current_node_events = [
@@ -254,51 +210,108 @@ def validate_flow_execution(
                 if matched["events"][ev_id].node_id == node_id
             ]
 
+            # If no events for this node, mark as skipped
+            if not current_node_events:
+                items.append(
+                    ValidationItem(
+                        node_id=node_id,
+                        dep_node_ids=current_node.dep_ids or [],
+                        message="No events for this node",
+                        status="skipped",
+                        elapsed_ns=time_ns() - item_start,
+                        ev_ids=[],
+                        upstream_ev_ids=[],
+                    )
+                )
+                continue
+
+            # Build Ctx from ALL upstream dependencies
+            ctx: Ctx = {"deps": []}
+            upstream_ev_ids: list[str] = []
+
+            if current_node.dep_ids:
+                # For each dep_id, find ALL matching events from previous layers
+                for dep_id in current_node.dep_ids:
+                    # Search all previous layers for events matching this dep_id
+                    for prev_layer_index in range(layer_index):
+                        prev_layer_event_ids = matched["layers"][prev_layer_index]
+                        for prev_event_id in prev_layer_event_ids:
+                            prev_event = matched["events"][prev_event_id]
+                            if prev_event.node_id == dep_id:
+                                # Add to upstream_ev_ids
+                                upstream_ev_ids.append(prev_event_id)
+                                # Add this event to deps
+                                dep_data: DepData = {
+                                    "flow": prev_event.flow,
+                                    "id": prev_event.node_id,
+                                    "data": prev_event.data,
+                                }
+                                ctx["deps"].append(dep_data)
+
+            # Validate each event for this node
+            status: str = "running"
+            error: str | None = None
+            message: str | None = None
+
             for current_ev in current_node_events:
                 if status == "failed":
                     break
 
-                for upstream_ev in upstream_events:
-                    if status == "failed":
+                # Call validator if present
+                if current_node.validator and evaluator:
+                    validator_passed = evaluator.evaluate(
+                        current_node.validator,
+                        data=current_ev.data,
+                        ctx=cast(dict[str, Any], ctx),
+                    )
+                    if not validator_passed:
+                        error = "Validator assertion failed"
+                        status = "failed"
+                        overall_status = "failed"
                         break
-
-                    some_found = True
-
-                    # Check conditions (timeout)
-                    if len(current_node.conditions) == 0:
+                    else:
+                        message = "Validator passed"
                         status = "passed"
-                        message = (
-                            f"Dependency found for {current_node.id}, no conditions"
-                        )
-                        continue
 
-                    for cond in node.conditions:
+                # Check timeout conditions if present
+                if current_node.conditions:
+                    for cond in current_node.conditions:
                         if not cond.timeout_ms:
                             continue
 
-                        time_diff_ms = (current_ev.ts - upstream_ev.ts) / 1_000_000
-
-                        if time_diff_ms > cond.timeout_ms:
-                            error = append_text(
-                                f"Timeout exceeded: {time_diff_ms}ms > {cond.timeout_ms}ms",
-                                error,
-                                "\n",
+                        # Check timeout against all upstream events
+                        if ctx["deps"]:
+                            # Find the most recent upstream event
+                            max_upstream_ts = max(
+                                matched["events"][ev_id].ts
+                                for ev_id in upstream_ev_ids
+                                if ev_id in matched["events"]
                             )
-                            status = "failed"
-                        else:
-                            message = f"Timeout satisfied: {time_diff_ms}ms <= {cond.timeout_ms}ms"
-                            status = "passed"
+                            time_diff_ms = (current_ev.ts - max_upstream_ts) / 1_000_000
 
-            if not some_found:
-                message = "No matching dependency events found"
-                status = "skipped"
+                            if time_diff_ms > cond.timeout_ms:
+                                error = append_text(
+                                    f"Timeout exceeded: {time_diff_ms}ms > {cond.timeout_ms}ms",
+                                    error,
+                                    "\n",
+                                )
+                                status = "failed"
+                                overall_status = "failed"
+                            else:
+                                if not message:
+                                    message = f"Timeout satisfied: {time_diff_ms}ms <= {cond.timeout_ms}ms"
+                                if status == "running":
+                                    status = "passed"
 
+            # If no validator and no conditions, mark as passed
             if status == "running":
-                message = "All conditions passed"
-                status = "passed"
-
-            if status == "failed":
-                overall_status = "failed"
+                if current_node.dep_ids and not ctx["deps"]:
+                    message = "No upstream events found for dependencies"
+                    status = "failed"
+                    overall_status = "failed"
+                else:
+                    message = "Node validation passed"
+                    status = "passed"
 
             items.append(
                 ValidationItem(
@@ -308,7 +321,7 @@ def validate_flow_execution(
                     message=message,
                     error=error,
                     elapsed_ns=time_ns() - item_start,
-                    ev_ids=layer_ev_ids,
+                    ev_ids=[ev.id for ev in current_node_events],
                     upstream_ev_ids=upstream_ev_ids,
                 )
             )

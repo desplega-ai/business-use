@@ -1,0 +1,19 @@
+# Business-Use Configuration
+# Copy this file to config.yaml and customize for your environment
+
+# API key for authenticating requests to the server
+# Required when running: business-use serve, business-use prod
+api_key: your_secret_key_here
+
+# Path to SQLite database file
+# Default: ./db.sqlite (development) or ~/.business-use/db.sqlite (production)
+database_path: ./db.sqlite
+
+# Logging level: DEBUG, INFO, WARNING, ERROR
+log_level: info
+
+# Enable debug mode (verbose SQL queries, etc.)
+debug: false
+
+# Environment name
+env: local

@@ -139,16 +139,6 @@ class BatchProcessor:
 
             for event in batch:
                 try:
-                    # Evaluate filter first - skip if False (client-side filtering)
-                    if event.filter is not None:
-                        if callable(event.filter):
-                            if not event.filter():
-                                logger.debug(f"Event {event.id} filtered out")
-                                continue
-                        elif not event.filter:
-                            logger.debug(f"Event {event.id} filtered out")
-                            continue
-
                     # Evaluate lambdas
                     run_id = event.run_id() if callable(event.run_id) else event.run_id
                     dep_ids = (
@@ -160,7 +150,7 @@ class BatchProcessor:
                         else event.conditions
                     )
 
-                    # Serialize filter if present and callable (send to backend)
+                    # Serialize filter if present and callable (send to backend for evaluation)
                     filter_expr = None
                     if event.filter is not None and callable(event.filter):
                         filter_expr = self._serialize_lambda(event.filter)

@@ -6,11 +6,12 @@ A lightweight, production-ready Python SDK for tracking business events and asse
 
 ## Features
 
-- **Simple API**: Just three functions: `initialize()`, `act()`, and `assert_()`
+- **Simple API**: Main function `ensure()` with convenience helpers `act()` and `assert_()`
 - **Non-blocking**: Events are batched and sent asynchronously in the background
 - **Never fails**: All errors are handled internally - your application never crashes
 - **Thread-safe**: Safe to use from multiple threads concurrently
 - **Minimal dependencies**: Only `httpx` and `pydantic`
+- **Context-aware**: Filters and validators can access upstream dependency data
 
 ## Installation
 
@@ -27,41 +28,51 @@ uv add business-use
 ## Quick Start
 
 ```python
-from business_use import initialize, act, assert_
+from business_use import initialize, ensure
 
-# Option 1: Initialize with parameters
+# Initialize with API key
 initialize(api_key="your-api-key")
 
-# Option 2: Initialize with environment variables
-# Set BUSINESS_USE_API_KEY=your-api-key in your environment
-initialize()
-
-# Track a business action
-act(
+# Track a business action (no validator)
+ensure(
     id="user_signup",
     flow="onboarding",
     run_id="user_12345",
     data={"email": "user@example.com", "plan": "premium"}
 )
 
-# Track a business assertion
+# Track a business assertion (with validator)
 def validate_payment(data, ctx):
-    return data["amount"] > 0 and data["currency"] in ["USD", "EUR"]
+    """Validate payment and check upstream dependencies."""
+    # ctx["deps"] contains upstream dependency events
+    # Each dep: {"flow": str, "id": str, "data": dict}
+    has_cart = any(dep["id"] == "cart_created" for dep in ctx["deps"])
+    return data["amount"] > 0 and has_cart
 
-assert_(
+ensure(
     id="payment_valid",
     flow="checkout",
     run_id="order_67890",
     data={"amount": 99.99, "currency": "USD"},
-    validator=validate_payment
+    dep_ids=["cart_created"],
+    validator=validate_payment  # Creates "assert" node
 )
+
+# Convenience wrappers (optional)
+from business_use import act, assert_
+
+# act() is ensure() without validator
+act(id="user_signup", flow="onboarding", run_id="u123", data={...})
+
+# assert_() is ensure() with validator
+assert_(id="validation", flow="checkout", run_id="o123", data={...}, validator=fn)
 ```
 
 ## API Reference
 
 ### `initialize()`
 
-Initialize the SDK before using `act()` or `assert_()`. This validates the connection to the backend and starts the background batch processor.
+Initialize the SDK before using `ensure()`. This validates the connection to the backend and starts the background batch processor.
 
 **Parameters:**
 
@@ -90,9 +101,9 @@ initialize()
 initialize(api_key="your-api-key")  # URL from BUSINESS_USE_URL or default
 ```
 
-### `act()`
+### `ensure()`
 
-Track a business action/event.
+**Main function** to track business events. Type is auto-determined by the presence of a `validator`.
 
 **Parameters:**
 
@@ -100,9 +111,76 @@ Track a business action/event.
 - `flow` (str, required): Flow identifier
 - `run_id` (str | callable, required): Run identifier (or lambda returning string)
 - `data` (dict, required): Event data payload
-- `filter` (bool | callable, optional): Filter to conditionally skip events
+- `filter` (callable, optional): Filter function `(data, ctx) -> bool` evaluated on backend
+- `dep_ids` (list[str] | callable, optional): Dependency node IDs
+- `validator` (callable, optional): Validation function `(data, ctx) -> bool` executed on backend
+- `description` (str, optional): Human-readable description
+- `conditions` (list[NodeCondition] | callable, optional): Optional conditions (e.g., timeout constraints)
+- `additional_meta` (dict, optional): Optional additional metadata
+
+**Type determination:**
+- If `validator` is provided → creates an **"assert"** node
+- If `validator` is `None` → creates an **"act"** node
+
+**Example:**
+
+```python
+# Action node (no validator)
+ensure(
+    id="payment_processed",
+    flow="checkout",
+    run_id="run_12345",
+    data={"amount": 100, "currency": "USD"},
+    dep_ids=["cart_created"],
+    description="Payment processed successfully"
+)
+
+# Assertion node (with validator)
+def validate_total(data, ctx):
+    items_total = sum(dep["data"]["price"] for dep in ctx["deps"])
+    return data["total"] == items_total
+
+ensure(
+    id="order_total_valid",
+    flow="checkout",
+    run_id="run_12345",
+    data={"total": 150},
+    dep_ids=["item_added"],
+    validator=validate_total,
+    description="Order total validation"
+)
+```
+
+### `act()`
+
+**Convenience wrapper** around `ensure()` without a validator. Creates an "act" node.
+
+**Parameters:**
+
+- `id` (str, required): Unique node/event identifier
+- `flow` (str, required): Flow identifier
+- `run_id` (str | callable, required): Run identifier (or lambda returning string)
+- `data` (dict, required): Event data payload
+- `filter` (callable, optional): Filter function `(data, ctx) -> bool` evaluated on backend
 - `dep_ids` (list[str] | callable, optional): Dependency node IDs
 - `description` (str, optional): Human-readable description
+
+**Filter Function Signature:**
+
+```python
+def my_filter(data: dict, ctx: dict) -> bool:
+    """Filter function executed on the backend.
+
+    Args:
+        data: Current event data
+        ctx: Context with upstream dependencies:
+             ctx["deps"] = [{"flow": str, "id": str, "data": dict}, ...]
+
+    Returns:
+        bool: True to include event, False to filter it out
+    """
+    pass
+```
 
 **Example:**
 
@@ -131,14 +209,30 @@ act(
     flow="integration",
     run_id=lambda: get_current_trace_id(),
     data={"endpoint": "/users", "method": "POST"},
-    filter=lambda: should_track_request(),  # Skip if returns False
     dep_ids=lambda: get_upstream_dependencies()
+)
+
+# With filter based on upstream dependencies
+def check_prerequisites(data, ctx):
+    """Only process if all upstream tasks are approved."""
+    return all(dep["data"].get("status") == "approved" for dep in ctx["deps"])
+
+act(
+    id="order_completed",
+    flow="checkout",
+    run_id="run_12345",
+    data={"order_id": "ord_123"},
+    dep_ids=["payment_processed", "inventory_reserved"],
+    filter=check_prerequisites,  # Evaluated on backend with ctx
+    description="Order completed after all prerequisites"
 )
 ```
 
 ### `assert_()`
 
-Track a business assertion for validation.
+**Convenience wrapper** around `ensure()` with a validator. Creates an "assert" node.
+
+Named `assert_` (with underscore) to avoid conflict with Python's built-in `assert` keyword.
 
 **Parameters:**
 
@@ -146,10 +240,27 @@ Track a business assertion for validation.
 - `flow` (str, required): Flow identifier
 - `run_id` (str | callable, required): Run identifier (or lambda returning string)
 - `data` (dict, required): Event data payload
-- `filter` (bool | callable, optional): Filter to conditionally skip assertions
+- `filter` (callable, optional): Filter function `(data, ctx) -> bool` evaluated on backend
 - `dep_ids` (list[str] | callable, optional): Dependency node IDs
-- `validator` (callable, optional): Validation function `(data, ctx) -> bool`
+- `validator` (callable, optional): Validation function `(data, ctx) -> bool` executed on backend
 - `description` (str, optional): Human-readable description
+
+**Validator Function Signature:**
+
+```python
+def my_validator(data: dict, ctx: dict) -> bool:
+    """Validator function executed on the backend.
+
+    Args:
+        data: Current event data
+        ctx: Context with upstream dependencies:
+             ctx["deps"] = [{"flow": str, "id": str, "data": dict}, ...]
+
+    Returns:
+        bool: True if validation passes, False if it fails
+    """
+    pass
+```
 
 **Example:**
 
@@ -162,22 +273,54 @@ assert_(
     data={"total": 150}
 )
 
-# With validator
+# With validator accessing upstream dependencies
 def validate_order(data, ctx):
-    """Validate order total matches sum of items."""
-    items_total = sum(item["price"] for item in data["items"])
+    """Validate order total matches sum of items from upstream events.
+
+    Args:
+        data: Current order data
+        ctx: Context with upstream item events in ctx["deps"]
+    """
+    # Calculate total from upstream item_added events
+    items_total = sum(
+        dep["data"]["price"]
+        for dep in ctx["deps"]
+        if dep["id"] == "item_added"
+    )
+
+    # Verify order total matches
     return data["total"] == items_total
 
 assert_(
     id="order_total_matches",
     flow="checkout",
     run_id="run_12345",
-    data={
-        "total": 150,
-        "items": [{"price": 75}, {"price": 75}]
-    },
+    data={"total": 150},
+    dep_ids=["item_added"],  # Multiple item_added events
     validator=validate_order,
     description="Order total matches sum of item prices"
+)
+
+# Validator with complex logic
+def validate_payment_and_inventory(data, ctx):
+    """Validate both payment and inventory are ready."""
+    payment_approved = any(
+        dep["id"] == "payment_processed" and dep["data"]["status"] == "approved"
+        for dep in ctx["deps"]
+    )
+    inventory_reserved = any(
+        dep["id"] == "inventory_reserved" and dep["data"]["reserved"] == True
+        for dep in ctx["deps"]
+    )
+    return payment_approved and inventory_reserved and data["ready_to_ship"]
+
+assert_(
+    id="order_ready",
+    flow="checkout",
+    run_id="run_12345",
+    data={"ready_to_ship": True},
+    dep_ids=["payment_processed", "inventory_reserved"],
+    validator=validate_payment_and_inventory
 )
 ```
 
@@ -222,9 +365,15 @@ The SDK uses a background worker thread to batch and send events:
 
 ### Lambda Serialization
 
-Callable parameters (`run_id`, `dep_ids`, `validator`) are serialized as Python source code and executed on the backend.
+Callable parameters (`run_id`, `dep_ids`, `filter`, `validator`) are serialized as Python source code and executed on the backend.
 
-**Note:** Only use simple lambdas or functions defined in the same file. External references may fail serialization.
+**Important Notes:**
+- **Filters are evaluated on the backend** with access to upstream dependencies via `ctx`
+- **Validators are executed on the backend** with the same `ctx` structure
+- Both filter and validator receive: `(data: dict, ctx: dict) -> bool`
+- `ctx["deps"]` contains all upstream dependency events as a list of `{"flow": str, "id": str, "data": dict}`
+- Only use simple lambdas or functions defined in the same file
+- External references may fail serialization
 
 ## Requirements
 

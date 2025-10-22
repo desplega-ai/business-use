@@ -17,6 +17,30 @@ export const ExprEngineSchema = z.enum(['python', 'js', 'cel']);
 export type ExprEngine = z.infer<typeof ExprEngineSchema>;
 
 /**
+ * Type definitions for validator and filter context
+ */
+
+/**
+ * Upstream dependency event data
+ */
+export interface DepData {
+  /** Flow identifier */
+  flow: string;
+  /** Node/event identifier */
+  id: string;
+  /** Event data payload */
+  data: Record<string, any>;
+}
+
+/**
+ * Context passed to filter and validator functions
+ */
+export interface Ctx {
+  /** List of upstream dependency event data */
+  deps: DepData[];
+}
+
+/**
  * Expression that can be executed on the backend
  */
 export const ExprSchema = z.object({
@@ -63,8 +87,8 @@ export interface QueuedEvent {
   data: Record<string, any>;
   description?: string;
   dep_ids?: string[] | (() => string[]);
-  filter?: boolean | ((data: Record<string, any>) => boolean);
-  validator?: (data: Record<string, any>, ctx: Record<string, any>) => boolean;
+  filter?: boolean | ((data: Record<string, any>, ctx: Ctx) => boolean);
+  validator?: (data: Record<string, any>, ctx: Ctx) => boolean;
   conditions?: NodeCondition[] | (() => NodeCondition[]);
   additional_meta?: Record<string, any>;
 }

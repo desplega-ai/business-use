@@ -2,6 +2,56 @@
 
 Analyze the codebase and automatically add Business-Use SDK instrumentation to track critical business flows.
 
+## SDK Installation & Setup
+
+### Python SDK
+
+```bash
+pip install business-use
+```
+
+**Initialization:**
+```python
+from business_use import initialize, ensure
+
+# Initialize once at application startup
+initialize(api_key="your-api-key")
+
+# Track events with ensure()
+ensure(
+    id="event_name",
+    flow="flow_name",
+    run_id="run_id",
+    data={"key": "value"},
+    dep_ids=["upstream_event"],  # Optional
+    validator=lambda data, ctx: True  # Optional, for assertions
+)
+```
+
+### JavaScript/TypeScript SDK
+
+```bash
+npm i @desplega.ai/business-use
+```
+
+**Initialization:**
+```typescript
+import { initialize, ensure } from '@desplega.ai/business-use';
+
+// Initialize once at application startup
+initialize({ apiKey: 'your-api-key' });
+
+// Track events with ensure()
+ensure({
+  id: 'event_name',
+  flow: 'flow_name',
+  runId: 'run_id',
+  data: { key: 'value' },
+  depIds: ['upstream_event'], // Optional
+  validator: (data, ctx) => true // Optional, for assertions
+});
+```
+
 ## Your Task
 
 You will analyze this codebase to identify business flows that would benefit from tracking and validation. Then you'll propose where to add Business-Use instrumentation.
@@ -117,10 +167,23 @@ def critical_business_operation(id: str, data: dict):
 
 Provide:
 
-1. **SDK Installation**
-2. **Initialization code** (with location in codebase)
-3. **List of files to modify** with specific instrumentation points
-4. **Testing instructions**
+1. **SDK Installation** (reference the installation commands at the top of this file)
+2. **Initialization code** with recommended location in codebase
+   - For Python: typically in `main.py`, `app.py`, or application entry point
+   - For JavaScript: typically in `index.ts`, `main.ts`, or app initialization file
+3. **Backend Setup** (if not already running):
+   ```bash
+   # Option 1: With uvx (no install)
+   uvx business-use-core db migrate  # Initialize database
+   uvx business-use-core serve       # Start server
+
+   # Option 2: After install (cleaner)
+   pip install business-use-core
+   business-use db migrate
+   business-use serve --reload
+   ```
+4. **List of files to modify** with specific instrumentation points
+5. **Testing instructions** using the validation commands
 
 **Ask the user:**
 - "Do you want me to proceed with implementing these changes?"
@@ -177,15 +240,51 @@ Shall I proceed with implementing this across the codebase?"
 
 After instrumentation, show users how to validate:
 
+**With uvx (no install required):**
 ```bash
 # Evaluate a specific flow run
 uvx business-use-core eval-run <run_id> <flow_name> --verbose
 
-# Visualize the flow structure
+# Visualize the flow structure with actual event data
+uvx business-use-core eval-run <run_id> <flow_name> --show-graph
+
+# Get JSON output for automation/CI pipelines
+uvx business-use-core eval-run <run_id> <flow_name> --json-output
+
+# View the flow definition (without evaluation)
 uvx business-use-core show-graph <flow_name>
 
-# Get JSON output for automation
-uvx business-use-core eval-run <run_id> <flow_name> --json-output
+# List all runs for a specific flow
+uvx business-use-core runs --flow <flow_name>
+```
+
+**After installation (cleaner commands):**
+```bash
+# Install backend
+pip install business-use-core
+
+# Now use the shorter command
+business-use eval-run <run_id> <flow_name> --verbose
+business-use show-graph <flow_name>
+business-use runs --flow <flow_name>
+```
+
+**Backend Setup Commands:**
+```bash
+# Initialize database (first time only)
+uvx business-use-core db migrate
+# or if installed:
+business-use db migrate
+
+# Start development server
+uvx business-use-core serve --reload
+# or:
+business-use serve --reload
+
+# Start production server
+uvx business-use-core prod
+# or:
+business-use prod
 ```
 
 ## Key Questions to Ask

@@ -8,6 +8,31 @@ from typing import Any, TypedDict
 from src.models import EvalStatus
 
 
+# Type definitions for validator and filter context
+class DepData(TypedDict):
+    """Upstream dependency event data.
+
+    Attributes:
+        flow: Flow identifier
+        id: Node/event identifier
+        data: Event data payload
+    """
+
+    flow: str
+    id: str
+    data: dict[str, Any]
+
+
+class Ctx(TypedDict):
+    """Context passed to filter and validator functions.
+
+    Attributes:
+        deps: List of upstream dependency event data
+    """
+
+    deps: list[DepData]
+
+
 class FlowGraph(TypedDict):
     """Graph representation of flow nodes and their dependencies.
 

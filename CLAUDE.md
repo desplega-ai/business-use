@@ -50,20 +50,26 @@ Business-Use is a monorepo for tracking and validating business event flows in p
 # Install dependencies
 cd core && uv sync
 
+# First-time setup: Interactive initialization (recommended)
+uv run business-use init     # Generates API key, creates config, initializes DB
+
+# OR manual setup:
+# cp config.yaml.example config.yaml && uv run business-use db migrate
+
 # Run development server with auto-reload
-uv run cli serve --reload
+uv run business-use serve --reload
 
 # Run production server (4 workers)
-uv run cli prod
+uv run business-use prod
 
 # Evaluate a flow run
-uv run cli eval-run <run_id> <flow> [--verbose] [--show-graph] [--json-output]
+uv run business-use eval-run <run_id> <flow> [--verbose] [--show-graph] [--json-output]
 
 # Show flow graph definition
-uv run cli show-graph [flow]
+uv run business-use show-graph [flow]
 
 # Run database migrations
-uv run cli db migrate
+uv run business-use db migrate
 
 # Format code
 uv run ruff format src/
@@ -202,18 +208,122 @@ nodes:
       script: data["amount"] > 0
 ```
 
+## Configuration
+
+### Core Backend Configuration
+
+The core backend uses YAML configuration files with the following priority:
+
+1. `./config.yaml` (development - local to project)
+2. `~/.business-use/config.yaml` (production - user home directory)
+3. Default values
+
+**Configuration file format (`config.yaml`):**
+
+```yaml
+# API key for authenticating requests to the server
+# Required when running: serve, prod
+api_key: your_secret_key_here
+
+# Path to SQLite database file
+# Default: ./db.sqlite (dev) or ~/.business-use/db.sqlite (prod)
+database_path: ./db.sqlite
+
+# Logging level: DEBUG, INFO, WARNING, ERROR
+log_level: info
+
+# Enable debug mode (verbose SQL queries, etc.)
+debug: false
+
+# Environment name
+env: local
+```
+
+**Getting started:**
+
+```bash
+# Development setup - Quick start (recommended)
+cd core
+uv run business-use init     # Interactive setup: generates API key, creates config, initializes DB
+
+# Start server
+uv run business-use serve --reload
+```
+
+**Manual setup (alternative):**
+
+```bash
+cd core
+cp config.yaml.example config.yaml
+# Edit config.yaml with your settings
+
+# Initialize database
+uv run business-use db migrate
+
+# Start server
+uv run business-use serve --reload
+```
+
+**Production/PyPI usage:**
+
+When installed via PyPI, the configuration will be loaded from `~/.business-use/config.yaml`.
+
+The package provides two command names (both work identically):
+- `business-use` (shorter, recommended)
+- `business-use-core` (full package name)
+
+```bash
+# Using uvx (no installation required)
+uvx business-use-core init   # Interactive setup
+
+# Start server
+uvx business-use-core serve
+
+# OR install globally and use shorter command
+pip install business-use-core
+business-use init            # Interactive setup (shorter!)
+business-use serve
+```
+
+**Manual setup (alternative):**
+
+```bash
+# Create config directory
+mkdir -p ~/.business-use
+
+# Create config file
+cat > ~/.business-use/config.yaml <<EOF
+api_key: your_secret_key_here
+database_path: ~/.business-use/db.sqlite
+log_level: info
+EOF
+
+# Initialize database
+business-use db migrate
+
+# Start server
+business-use serve
+```
+
+**Important notes:**
+
+- `api_key` is **required** only for `serve` and `prod` commands
+- Other commands (`eval-run`, `show-graph`, `runs`, etc.) work without API_KEY
+- Database commands automatically show helpful errors if DB not initialized
+- `config.yaml` is gitignored (use `config.yaml.example` as template)
+
 ## Database
 
 - **Engine**: SQLite with WAL mode (aiosqlite for async)
-- **Migrations**: Alembic (run `uv run cli db migrate`)
+- **Migrations**: Alembic (run `uv run business-use db migrate`)
+  - Migrations are configured programmatically (no alembic.ini required)
+  - Migration files located in `src/migrations/`
+  - Packaged with the distribution for PyPI/uvx users
 - **Schema**: See `core/src/models.py` for Event, Node models
 - **Indexes**: `(run_id, flow)` for fast lookup
+- **Location**: `./db.sqlite` (dev with local config) or `~/.business-use/db.sqlite` (prod)
 
-## Environment Variables
-
-### Core
-- `DATABASE_URL`: SQLite database path (default: `sqlite+aiosqlite:///./business-use.db`)
-- `API_KEY`: Authentication key for backend
+## SDK Configuration
 
 ### SDKs
 - `BUSINESS_USE_API_KEY`: API key for authentication
@@ -224,11 +334,11 @@ nodes:
 ### Core
 ```bash
 cd core
-uv run cli serve --reload  # Terminal 1
+uv run business-use serve --reload  # Terminal 1
 
 # Terminal 2
-uv run cli show-graph checkout
-uv run cli eval-run test_run_001 checkout --verbose
+uv run business-use show-graph checkout
+uv run business-use eval-run test_run_001 checkout --verbose
 ```
 
 ### SDKs
@@ -280,9 +390,9 @@ The evaluation process:
 See `core/CLI_REFERENCE.md` for detailed command documentation.
 
 Quick reference:
-- `uv run cli serve --reload` - Development server
-- `uv run cli eval-run <run_id> <flow>` - Evaluate flow
-- `uv run cli show-graph [flow]` - Show flow structure
+- `uv run business-use serve --reload` - Development server
+- `uv run business-use eval-run <run_id> <flow>` - Evaluate flow
+- `uv run business-use show-graph [flow]` - Show flow structure
 - Use `--json-output` for automation
 - Use `--verbose` for debugging
 - Use `--show-graph` for visualization
