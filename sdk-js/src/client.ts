@@ -3,7 +3,7 @@
  */
 
 import { BatchProcessor } from './batch.js';
-import type { NodeCondition, NodeType, QueuedEvent } from './models.js';
+import type { Ctx, NodeCondition, NodeType, QueuedEvent } from './models.js';
 
 /**
  * Logger utility
@@ -139,9 +139,9 @@ export function initialize(options?: {
  * @param options.flow - Flow identifier (e.g., "checkout")
  * @param options.runId - Run identifier (string or function returning string)
  * @param options.data - Event data payload
- * @param options.filter - Optional filter (boolean or function). If false, event is skipped
+ * @param options.filter - Optional filter function (data, ctx) -> boolean. Evaluated on backend.
  * @param options.depIds - Optional dependency node IDs (array or function)
- * @param options.validator - Optional validation function (executed on backend). If provided, creates "assert" node
+ * @param options.validator - Optional validation function (data, ctx) -> boolean. Executed on backend. If provided, creates "assert" node.
  * @param options.description - Optional human-readable description
  * @param options.conditions - Optional list of conditions (e.g., timeout constraints)
  * @param options.additional_meta - Optional additional metadata dict
@@ -158,26 +158,31 @@ export function initialize(options?: {
  *   description: 'Payment processed successfully'
  * });
  *
- * // Assertion node (with validator) - type-safe!
+ * // Assertion node (with validator accessing upstream deps)
  * ensure({
  *   id: 'order_total_matches',
  *   flow: 'checkout',
  *   runId: 'run_12345',
- *   data: { total: 150, items: [{ price: 75 }, { price: 75 }] },
+ *   data: { total: 150 },
  *   validator: (data, ctx) => {
- *     // data.total is known to exist (type-safe!)
- *     return data.total === data.items.reduce((sum, item) => sum + item.price, 0);
+ *     // ctx.deps contains all upstream dependency events
+ *     return data.total === ctx.deps.reduce((sum, dep) => sum + dep.data.price, 0);
  *   },
+ *   depIds: ['item_added'],
  *   description: 'Order total matches sum of items'
  * });
  *
- * // Using functions and conditions
+ * // Using filter with upstream context
  * ensure({
  *   id: 'order_completed',
  *   flow: 'checkout',
  *   runId: () => getCurrentRunId(),
  *   data: { orderId: '123', amount: 100 },
- *   filter: (data) => data.amount > 0,
+ *   filter: (data, ctx) => {
+ *     // Filter based on upstream event data
+ *     return ctx.deps.every(dep => dep.data.status === 'approved');
+ *   },
+ *   depIds: ['payment_processed', 'inventory_reserved'],
  *   conditions: [{ timeout_ms: 5000 }],
  *   additional_meta: { source: 'api' }
  * });
@@ -188,9 +193,9 @@ export function ensure<TData extends Record<string, any> = Record<string, any>>(
   flow: string;
   runId: string | (() => string);
   data: TData;
-  filter?: boolean | ((data: TData) => boolean);
+  filter?: boolean | ((_data: TData, _ctx: Ctx) => boolean);
   depIds?: string[] | (() => string[]);
-  validator?: (data: TData, ctx: Record<string, any>) => boolean;
+  validator?: (_data: TData, _ctx: Ctx) => boolean;
   description?: string;
   conditions?: NodeCondition[] | (() => NodeCondition[]);
   additional_meta?: Record<string, any>;
@@ -248,7 +253,7 @@ export function act<TData extends Record<string, any> = Record<string, any>>(opt
   runId: string | (() => string);
   data: TData;
   depIds?: string[] | (() => string[]);
-  filter?: (data: TData) => boolean;
+  filter?: (_data: TData, _ctx: Ctx) => boolean;
   timeoutMs?: number;
 }): void {
   ensure(options);
@@ -263,9 +268,9 @@ export function assert<TData extends Record<string, any> = Record<string, any>>(
   flow: string;
   runId: string | (() => string);
   data: TData;
-  validator?: (data: TData, ctx: Record<string, any>) => boolean;
+  validator?: (_data: TData, _ctx: Ctx) => boolean;
   depIds?: string[] | (() => string[]);
-  filter?: (data: TData) => boolean;
+  filter?: (_data: TData, _ctx: Ctx) => boolean;
   timeoutMs?: number;
 }): void {
   ensure(options);
@@ -280,10 +285,10 @@ function _enqueueEvent<TData extends Record<string, any>>(options: {
   flow: string;
   runId: string | (() => string);
   data: TData;
-  filter?: boolean | ((data: TData) => boolean);
+  filter?: boolean | ((_data: TData, _ctx: Ctx) => boolean);
   depIds?: string[] | (() => string[]);
   description?: string;
-  validator?: (data: TData, ctx: Record<string, any>) => boolean;
+  validator?: (_data: TData, _ctx: Ctx) => boolean;
   conditions?: NodeCondition[] | (() => NodeCondition[]);
   additional_meta?: Record<string, any>;
 }): void {
@@ -337,11 +342,11 @@ function _enqueueEvent<TData extends Record<string, any>>(options: {
       flow: options.flow,
       run_id: options.runId,
       data: options.data,
-      filter: options.filter as boolean | ((data: Record<string, any>) => boolean) | undefined,
+      filter: options.filter as boolean | ((_data: Record<string, any>) => boolean) | undefined,
       dep_ids: options.depIds,
       description: options.description,
       validator: options.validator as
-        | ((data: Record<string, any>, ctx: Record<string, any>) => boolean)
+        | ((_data: Record<string, any>, _ctx: Record<string, any>) => boolean)
         | undefined,
       conditions: options.conditions,
       additional_meta: options.additional_meta,

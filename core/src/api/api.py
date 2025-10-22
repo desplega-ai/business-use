@@ -1,4 +1,5 @@
 import logging
+import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, TypedDict
@@ -28,6 +29,14 @@ from src.models import (
 )
 from src.utils.time import now
 
+# Suppress Pydantic serialization warnings for dict-stored JSON fields
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    module="pydantic.main",
+    message=".*Pydantic serializer warnings.*",
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -41,10 +50,10 @@ router = APIRouter(
 )
 
 
-@router.get("/check")
-async def check(_: Annotated[None, Depends(ensure_api_key)]):
+@router.get("/status")
+async def status(_: Annotated[None, Depends(ensure_api_key)]):
     return SuccessResponse(
-        message="lgtm",
+        message="ok",
     )
 
 
@@ -187,75 +196,39 @@ async def run_eval(
     _: Annotated[None, Depends(ensure_api_key)],
     body: EvalInput,
 ):
-    """Run flow evaluation (supports both old and new API).
+    """Run flow evaluation.
 
-    The body can contain either:
-    - ev_id (legacy): Evaluates from a specific event
-    - run_id + flow (new): Evaluates entire run
-
-    The new API is preferred and more efficient.
+    The body must contain:
+    - run_id: Run identifier
+    - flow: Flow identifier
+    - start_node_id: Optional node to start from (for subgraph eval)
 
     Results are automatically persisted to the database.
     """
-    from src.eval import eval_event, eval_flow_run
+    from src.eval import eval_flow_run
 
-    # New API (preferred)
-    if body.run_id and body.flow:
-        result = await eval_flow_run(
-            run_id=body.run_id,
-            flow=body.flow,
-            start_node_id=body.start_node_id,
-        )
-
-        # Persist evaluation result to database
-        async with transactional() as session:
-            eval_output = EvalOutput(
-                id=str(uuid4()),
-                flow=body.flow,
-                run_id=body.run_id,
-                trigger_ev_id=None,
-                output=result,
-                created_at=now(),
-                status="active",
-            )
-            session.add(eval_output)
-            await session.commit()
-
-        return result
-
-    # Legacy API
-    if body.ev_id:
-        result = await eval_event(
-            event_id=body.ev_id,
-            whole_graph=body.whole_graph,
-        )
-
-        # Persist evaluation result to database
-        async with transactional() as session:
-            # Fetch the event to get flow and run_id
-            from src.adapters.sqlite import SqliteEventStorage
-
-            storage = SqliteEventStorage()
-            event = await storage.get_event_by_id(body.ev_id, session)
-
-            eval_output = EvalOutput(
-                id=str(uuid4()),
-                flow=event.flow if event else "unknown",
-                run_id=event.run_id if event else None,
-                trigger_ev_id=body.ev_id,
-                output=result,
-                created_at=now(),
-                status="active",
-            )
-            session.add(eval_output)
-            await session.commit()
-
-        return result
-
-    raise HTTPException(
-        status_code=400,
-        detail="Must provide either ev_id OR (run_id + flow)",
+    result = await eval_flow_run(
+        run_id=body.run_id,
+        flow=body.flow,
+        start_node_id=body.start_node_id,
     )
+
+    # Persist evaluation result to database
+    async with transactional() as session:
+        eval_output = EvalOutput(
+            id=str(uuid4()),
+            flow=body.flow,
+            run_id=body.run_id,
+            trigger_ev_id=None,
+            output=result,
+            created_at=now(),
+            status="active",
+        )
+
+        session.add(eval_output)
+        await session.commit()
+
+    return result
 
 
 @router.get("/nodes")
@@ -388,6 +361,7 @@ origins = [
     "http://localhost:3007",
     "http://localhost:13370",
     "http://localhost:5174",
+    "https://business-use.vercel.app",
 ]
 
 

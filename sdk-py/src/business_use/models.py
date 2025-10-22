@@ -1,12 +1,37 @@
 """Internal models for Business-Use SDK."""
 
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel
 
 NodeType = Literal["act", "assert", "generic", "trigger", "hook"]
 ExprEngine = Literal["python", "js", "cel"]
+
+
+# Type definitions for validator and filter context
+class DepData(TypedDict):
+    """Upstream dependency event data.
+
+    Attributes:
+        flow: Flow identifier
+        id: Node/event identifier
+        data: Event data payload
+    """
+
+    flow: str
+    id: str
+    data: dict[str, Any]
+
+
+class Ctx(TypedDict):
+    """Context passed to filter and validator functions.
+
+    Attributes:
+        deps: List of upstream dependency event data
+    """
+
+    deps: list[DepData]
 
 
 class Expr(BaseModel):
@@ -51,7 +76,7 @@ class QueuedEvent(BaseModel):
     data: dict[str, Any]
     description: str | None = None
     dep_ids: list[str] | Callable[[], list[str]] | None = None
-    filter: bool | Callable[[], bool] | None = None
-    validator: Callable[[dict[str, Any], dict[str, Any]], bool] | None = None
+    filter: bool | Callable[[dict[str, Any], Ctx], bool] | None = None
+    validator: Callable[[dict[str, Any], Ctx], bool] | None = None
     conditions: list[NodeCondition] | Callable[[], list[NodeCondition]] | None = None
     additional_meta: dict[str, Any] | None = None

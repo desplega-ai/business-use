@@ -5,10 +5,14 @@ help:
 	@echo "Business-Use Monorepo - Available Commands"
 	@echo "==========================================="
 	@echo ""
+	@echo "⚠️  BEFORE COMMITTING:"
+	@echo "  make ci            - Run EXACT same checks as GitHub Actions CI"
+	@echo "                       (format-check, lint-check, typecheck)"
+	@echo ""
 	@echo "Development:"
 	@echo "  make install       - Install all dependencies"
-	@echo "  make format        - Format code in all projects"
-	@echo "  make lint          - Lint code in all projects"
+	@echo "  make format        - Format code in all projects (auto-fix)"
+	@echo "  make lint          - Lint code in all projects (auto-fix)"
 	@echo "  make typecheck     - Run type checking in all projects"
 	@echo "  make test          - Run tests in all projects"
 	@echo "  make all           - Run format, lint, typecheck, and test"
@@ -40,7 +44,7 @@ install:
 	cd sdk-js && pnpm install
 	@echo ""
 	@echo "▶ UI..."
-	cd ui && pnpm install
+	cd ui && bun install
 	@echo ""
 	@echo "✅ All dependencies installed!"
 
@@ -71,9 +75,9 @@ format-ui:
 	@echo "🎨 Formatting UI..."
 	@if [ ! -d "ui/node_modules" ]; then \
 		echo "📦 Installing UI dependencies first..."; \
-		cd ui && pnpm install; \
+		cd ui && bun install; \
 	fi
-	cd ui && pnpm format
+	cd ui && bun run format
 
 # Lint all projects (in parallel)
 lint:
@@ -102,9 +106,9 @@ lint-ui:
 	@echo "🔍 Linting UI..."
 	@if [ ! -d "ui/node_modules" ]; then \
 		echo "📦 Installing UI dependencies first..."; \
-		cd ui && pnpm install; \
+		cd ui && bun install; \
 	fi
-	cd ui && pnpm lint:fix
+	cd ui && bun run lint:fix
 
 # Type checking (in parallel)
 typecheck:
@@ -130,12 +134,12 @@ typecheck-js:
 	cd sdk-js && pnpm typecheck
 
 typecheck-ui:
-	@echo "🔎 Type checking UI..."
+	@echo "🔎 Type checking UI (via build)..."
 	@if [ ! -d "ui/node_modules" ]; then \
 		echo "📦 Installing UI dependencies first..."; \
-		cd ui && pnpm install; \
+		cd ui && bun install; \
 	fi
-	cd ui && pnpm typecheck
+	cd ui && bun run build
 
 # Run tests (in parallel)
 test:
@@ -192,10 +196,11 @@ all: format lint typecheck test
 	@echo ""
 	@echo "✅ All checks passed! Ready to commit."
 
-# CI target (non-fixing lint)
-ci: format-check lint-check typecheck test
+# CI target - runs EXACT same checks as GitHub Actions CI
+# This matches .github/workflows/check.yaml exactly
+ci: format-check lint-check typecheck
 	@echo ""
-	@echo "✅ CI checks passed!"
+	@echo "✅ CI checks passed! (matches GitHub Actions workflow)"
 
 # Format check (without fixing, in parallel)
 format-check:
@@ -218,7 +223,7 @@ format-check-js:
 
 format-check-ui:
 	@echo "▶ Checking UI formatting..."
-	@cd ui && pnpm format:check
+	@cd ui && bun run format:check
 
 # Lint check (without fixing, in parallel)
 lint-check:
@@ -241,7 +246,7 @@ lint-check-js:
 
 lint-check-ui:
 	@echo "▶ Checking UI linting..."
-	@cd ui && pnpm lint
+	@cd ui && bun run lint
 
 # Development servers
 serve-core:
@@ -261,5 +266,6 @@ dev: install
 	@echo "  make serve-core    # Start backend (http://localhost:13370)"
 	@echo "  make serve-ui      # Start UI (http://localhost:5173)"
 	@echo ""
-	@echo "Before committing:"
+	@echo "⚠️  Before committing:"
+	@echo "  make ci            # Run EXACT same checks as CI (RECOMMENDED)"
 	@echo "  make all           # Run format, lint, typecheck, and test"

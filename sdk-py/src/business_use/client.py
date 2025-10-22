@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 from .batch import BatchProcessor
-from .models import NodeCondition, NodeType, QueuedEvent
+from .models import Ctx, NodeCondition, NodeType, QueuedEvent
 
 logger = logging.getLogger("business-use")
 
@@ -111,9 +111,9 @@ def ensure(
     flow: str,
     run_id: str | Callable[[], str],
     data: dict[str, Any],
-    filter: bool | Callable[[], bool] | None = None,
+    filter: bool | Callable[[dict[str, Any], Ctx], bool] | None = None,
     dep_ids: list[str] | Callable[[], list[str]] | None = None,
-    validator: Callable[[dict[str, Any], dict[str, Any]], bool] | None = None,
+    validator: Callable[[dict[str, Any], Ctx], bool] | None = None,
     description: str | None = None,
     conditions: list[NodeCondition] | Callable[[], list[NodeCondition]] | None = None,
     additional_meta: dict[str, Any] | None = None,
@@ -135,9 +135,9 @@ def ensure(
         flow: Flow identifier (e.g., "checkout")
         run_id: Run identifier (string or lambda returning string)
         data: Event data payload
-        filter: Optional filter (bool or lambda). If False, event is skipped
+        filter: Optional filter function (data, ctx) -> bool. Evaluated on backend.
         dep_ids: Optional dependency node IDs (list or lambda)
-        validator: Optional validation function (executed on backend). If provided, creates "assert" node
+        validator: Optional validation function (data, ctx) -> bool. Executed on backend. If provided, creates "assert" node.
         description: Optional human-readable description
         conditions: Optional list of conditions (e.g., timeout constraints)
         additional_meta: Optional additional metadata dict
@@ -153,27 +153,34 @@ def ensure(
         ...     description="Payment processed successfully"
         ... )
 
-        >>> # Assertion node (with validator)
+        >>> # Assertion node (with validator accessing upstream deps)
         >>> def validate_order_total(data, ctx):
-        ...     return data["total"] == sum(item["price"] for item in data["items"])
+        ...     # ctx.deps contains all upstream dependency events
+        ...     return data["total"] == sum(dep["data"]["price"] for dep in ctx["deps"])
         ...
         >>> ensure(
         ...     id="order_total_matches",
         ...     flow="checkout",
         ...     run_id="run_12345",
-        ...     data={"total": 150, "items": [{"price": 75}, {"price": 75}]},
+        ...     data={"total": 150},
         ...     validator=validate_order_total,
+        ...     dep_ids=["item_added"],
         ...     description="Order total matches sum of items"
         ... )
 
-        Using lambdas and conditions:
+        Using filter with upstream context:
         >>> from business_use import NodeCondition
+        >>> def check_approved(data, ctx):
+        ...     # Filter based on upstream event data
+        ...     return all(dep["data"].get("status") == "approved" for dep in ctx["deps"])
+        ...
         >>> ensure(
         ...     id="order_completed",
         ...     flow="checkout",
         ...     run_id=lambda: get_current_run_id(),
         ...     data={"order_id": order.id},
-        ...     filter=lambda: order.amount > 0,
+        ...     filter=check_approved,
+        ...     dep_ids=["payment_processed", "inventory_reserved"],
         ...     conditions=[NodeCondition(timeout_ms=5000)],
         ...     additional_meta={"source": "api"}
         ... )
@@ -224,7 +231,7 @@ def act(
     run_id: str | Callable[[], str],
     data: dict[str, Any],
     *,
-    filter: bool | Callable[[], bool] | None = None,
+    filter: bool | Callable[[dict[str, Any], Ctx], bool] | None = None,
     dep_ids: list[str] | Callable[[], list[str]] | None = None,
     description: str | None = None,
     conditions: list[NodeCondition] | Callable[[], list[NodeCondition]] | None = None,
@@ -239,7 +246,7 @@ def act(
         flow: Flow identifier
         run_id: Run identifier or lambda that returns one
         data: Event data payload
-        filter: Optional filter function to decide if event should be tracked
+        filter: Optional filter function (data, ctx) -> bool. Evaluated on backend.
         dep_ids: Optional list of dependency IDs or lambda that returns them
         description: Optional human-readable description
         conditions: Optional list of conditions or lambda that returns them
@@ -272,8 +279,8 @@ def assert_(
     run_id: str | Callable[[], str],
     data: dict[str, Any],
     *,
-    validator: Callable[[dict[str, Any], dict[str, Any]], bool] | None = None,
-    filter: bool | Callable[[], bool] | None = None,
+    validator: Callable[[dict[str, Any], Ctx], bool] | None = None,
+    filter: bool | Callable[[dict[str, Any], Ctx], bool] | None = None,
     dep_ids: list[str] | Callable[[], list[str]] | None = None,
     description: str | None = None,
     conditions: list[NodeCondition] | Callable[[], list[NodeCondition]] | None = None,
@@ -289,8 +296,8 @@ def assert_(
         flow: Flow identifier
         run_id: Run identifier or lambda that returns one
         data: Event data payload
-        validator: Optional validation function
-        filter: Optional filter function to decide if event should be tracked
+        validator: Optional validation function (data, ctx) -> bool. Executed on backend.
+        filter: Optional filter function (data, ctx) -> bool. Evaluated on backend.
         dep_ids: Optional list of dependency IDs or lambda that returns them
         description: Optional human-readable description
         conditions: Optional list of conditions or lambda that returns them
@@ -298,14 +305,16 @@ def assert_(
 
     Example:
         >>> def validate_total(data, ctx):
-        ...     return data["total"] > 0
+        ...     # Access upstream events via ctx.deps
+        ...     return data["total"] > 0 and len(ctx["deps"]) > 0
         >>>
         >>> assert_(
         ...     id="order_total_valid",
         ...     flow="checkout",
         ...     run_id="run_123",
         ...     data={"total": 150},
-        ...     validator=validate_total
+        ...     validator=validate_total,
+        ...     dep_ids=["cart_created"]
         ... )
     """
     ensure(
@@ -328,10 +337,10 @@ def _enqueue_event(
     flow: str,
     run_id: str | Callable[[], str],
     data: dict[str, Any],
-    filter: bool | Callable[[], bool] | None,
+    filter: bool | Callable[[dict[str, Any], Ctx], bool] | None,
     dep_ids: list[str] | Callable[[], list[str]] | None,
     description: str | None,
-    validator: Callable[[dict[str, Any], dict[str, Any]], bool] | None,
+    validator: Callable[[dict[str, Any], Ctx], bool] | None,
     conditions: list[NodeCondition] | Callable[[], list[NodeCondition]] | None,
     additional_meta: dict[str, Any] | None,
 ) -> None:
@@ -343,10 +352,10 @@ def _enqueue_event(
         flow: Flow identifier
         run_id: Run ID or lambda
         data: Event data
-        filter: Filter or lambda
+        filter: Filter function (data, ctx) -> bool. Evaluated on backend.
         dep_ids: Dependencies or lambda
         description: Optional description
-        validator: Optional validator function
+        validator: Optional validator function (data, ctx) -> bool. Executed on backend.
         conditions: Optional conditions or lambda
         additional_meta: Optional additional metadata
     """

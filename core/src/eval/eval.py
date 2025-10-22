@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 async def eval_flow_run(
     run_id: str,
     flow: str,
-    trigger_ev_id: str | None = None,
     start_node_id: str | None = None,
 ) -> BaseEvalOutput:
     """Evaluate flow execution for a specific run.
@@ -39,7 +38,6 @@ async def eval_flow_run(
     Args:
         run_id: The run identifier (e.g., user session, order ID)
         flow: The flow identifier (e.g., "checkout", "onboarding")
-        trigger_ev_id: Optional event that triggered this evaluation
         start_node_id: Optional node to start evaluation from (subgraph only)
 
     Returns:
@@ -99,6 +97,7 @@ async def eval_flow_run(
         matched=matched,
         nodes_map=flow_graph["nodes"],
         layers=layers,
+        evaluator=evaluator,
     )
 
     # 7. Convert to output model
@@ -108,52 +107,4 @@ async def eval_flow_run(
         graph=result["graph"],
         exec_info=result["items"],  # type: ignore
         ev_ids=result["ev_ids"],
-    )
-
-
-# Legacy function for backward compatibility
-# This maintains the old API but uses the new implementation
-async def eval_event(
-    event_id: str,
-    whole_graph: bool = False,
-) -> BaseEvalOutput:
-    """Evaluate flow from a specific event (LEGACY API).
-
-    This function maintains backward compatibility with the old API
-    that accepted event_id. It fetches the event, extracts run_id and flow,
-    then delegates to eval_flow_run().
-
-    Args:
-        event_id: Event identifier
-        whole_graph: If True, evaluate entire graph; if False, start from event's node
-
-    Returns:
-        BaseEvalOutput with evaluation results
-
-    Raises:
-        ValueError: If event not found
-
-    Example:
-        >>> result = await eval_event("evt_123")
-        >>> result.status
-        "passed"
-    """
-    logger.info(f"Evaluating event: {event_id} (legacy API)")
-
-    # Fetch the event to get run_id and flow
-    storage = SqliteEventStorage()
-    async with transactional() as session:
-        event = await storage.get_event_by_id(event_id, session)
-
-    if not event:
-        raise ValueError(f"Event with ID {event_id} not found")
-
-    # Delegate to new implementation
-    start_node_id = None if whole_graph else event.node_id
-
-    return await eval_flow_run(
-        run_id=event.run_id,
-        flow=event.flow,
-        trigger_ev_id=event_id,
-        start_node_id=start_node_id,
     )

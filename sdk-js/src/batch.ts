@@ -195,16 +195,6 @@ export class BatchProcessor {
 
       for (const event of batch) {
         try {
-          // Evaluate filter first - skip if False (client-side filtering)
-          if (event.filter !== undefined) {
-            const filterResult =
-              typeof event.filter === 'function' ? event.filter(event.data) : event.filter;
-            if (!filterResult) {
-              log.debug(`Event ${event.id} filtered out`);
-              continue;
-            }
-          }
-
           // Evaluate lambdas
           const runId = typeof event.run_id === 'function' ? event.run_id() : event.run_id;
           const depIds =
@@ -220,7 +210,7 @@ export class BatchProcessor {
                 : event.conditions
               : undefined;
 
-          // Serialize filter if present and callable (send to backend)
+          // Serialize filter if present and callable (send to backend for evaluation)
           const filterExpr: Expr | undefined =
             event.filter !== undefined && typeof event.filter === 'function'
               ? this._serializeFunction(event.filter)
@@ -352,9 +342,9 @@ export class BatchProcessor {
           const char = body[i];
 
           // Track closing delimiters (increase nesting when going backwards)
-          if (')]}}>'.includes(char)) {
+          if (char && ')]}}>'.includes(char)) {
             nestingLevel++;
-          } else if ('([{<'.includes(char)) {
+          } else if (char && '([{<'.includes(char)) {
             nestingLevel--;
           }
 
@@ -376,8 +366,13 @@ export class BatchProcessor {
         body = body.substring(0, lastSignificantChar + 1).trim();
 
         // Final cleanup: remove trailing syntax characters that aren't part of the expression
-        while (body.length > 0 && ',);'.includes(body[body.length - 1])) {
-          body = body.substring(0, body.length - 1).trim();
+        while (body.length > 0) {
+          const lastChar = body[body.length - 1];
+          if (lastChar && ',);'.includes(lastChar)) {
+            body = body.substring(0, body.length - 1).trim();
+          } else {
+            break;
+          }
         }
 
         return { engine: 'js', script: body };

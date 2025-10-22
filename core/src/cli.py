@@ -1,12 +1,15 @@
 import asyncio
 import json
 import logging
+import secrets
+import warnings
 from pathlib import Path
 
 import click
 from alembic import command
 from alembic.config import Config as AlembicConfig
 
+from src.config import API_KEY, DATABASE_PATH
 from src.logging import configure_logging
 
 log = logging.getLogger(__name__)
@@ -14,17 +17,238 @@ log = logging.getLogger(__name__)
 
 configure_logging()
 
+# Suppress Pydantic serialization warnings for dict-stored JSON fields
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    module="pydantic.main",
+    message=".*Pydantic serializer warnings.*",
+)
+
 
 def get_alembic_config() -> AlembicConfig:
-    """Get Alembic configuration."""
-    alembic_cfg = AlembicConfig("alembic.ini")
+    """Get Alembic configuration.
+
+    Configures Alembic programmatically to work with packaged migrations.
+    """
+    from src.config import DATABASE_URL
+
+    # Create config programmatically (no alembic.ini needed)
+    alembic_cfg = AlembicConfig()
+
+    # Find migrations directory relative to this file
+    # When installed, migrations will be at src/migrations
+    src_dir = Path(__file__).parent
+    migrations_dir = src_dir / "migrations"
+
+    # Fallback to old location for development
+    if not migrations_dir.exists():
+        migrations_dir = src_dir.parent / "migrations"
+
+    if not migrations_dir.exists():
+        raise RuntimeError(
+            f"Migrations directory not found. Looked in:\n"
+            f"  - {src_dir / 'migrations'}\n"
+            f"  - {src_dir.parent / 'migrations'}"
+        )
+
+    # Configure alembic
+    alembic_cfg.set_main_option("script_location", str(migrations_dir))
+    alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+
     return alembic_cfg
+
+
+def check_database_exists() -> bool:
+    """Check if the database file exists.
+
+    Returns:
+        True if database exists, False otherwise
+    """
+    db_path = Path(DATABASE_PATH)
+    return db_path.exists()
+
+
+def ensure_database_or_exit() -> None:
+    """Check if database exists, exit with helpful message if not."""
+    if not check_database_exists():
+        click.secho("Database not found!", fg="red", bold=True)
+        click.echo(f"Expected location: {DATABASE_PATH}")
+        click.echo()
+        click.echo("To initialize the database, run:")
+        click.secho("  business-use db migrate", fg="green", bold=True)
+        click.echo()
+        raise click.Abort()
+
+
+def ensure_api_key_or_exit() -> None:
+    """Check if API_KEY is configured, exit with helpful message if not."""
+    if not API_KEY:
+        click.secho("API_KEY not configured!", fg="red", bold=True)
+        click.echo()
+        click.echo("The API server requires an API key for authentication.")
+        click.echo()
+        click.echo("To generate and configure an API key, run:")
+        click.secho("  business-use init", fg="green", bold=True)
+        click.echo()
+        click.echo("Or manually add it to your config file:")
+        click.echo()
+        if Path("./config.yaml").exists():
+            click.secho("  Edit: ./config.yaml", fg="cyan")
+        else:
+            config_path = Path.home() / ".business-use" / "config.yaml"
+            click.secho(f"  Edit: {config_path}", fg="cyan")
+        click.echo()
+        click.echo("Add the following line:")
+        click.secho("  api_key: your_secret_key_here", fg="yellow")
+        click.echo()
+        raise click.Abort()
+
+
+def generate_api_key() -> str:
+    """Generate a secure random API key."""
+    return secrets.token_urlsafe(32)
 
 
 @click.group()
 def cli() -> None:
     """Business-Use CLI - Database management and utilities."""
     pass
+
+
+@cli.command()
+def init() -> None:
+    """Initialize Business-Use configuration for first-time setup.
+
+    This command will:
+    - Generate a secure API key
+    - Create config.yaml if it doesn't exist
+    - Optionally run database migrations
+
+    Examples:
+        business-use init    # Interactive first-time setup
+    """
+    click.secho("🚀 Business-Use First-Time Setup", fg="cyan", bold=True)
+    click.echo()
+
+    # Check if config already exists
+    local_config = Path("./config.yaml")
+    user_config = Path.home() / ".business-use" / "config.yaml"
+
+    config_path = local_config if local_config.exists() else user_config
+    config_exists = config_path.exists()
+
+    if config_exists:
+        click.echo(f"Found existing config: {config_path}")
+        click.echo()
+
+    # Generate API key
+    api_key = generate_api_key()
+    click.secho("Generated API Key:", fg="green", bold=True)
+    click.secho(f"  {api_key}", fg="yellow")
+    click.echo()
+    click.echo(
+        "⚠️  Save this key securely - you'll need it to authenticate API requests."
+    )
+    click.echo()
+
+    # Ask to save to config
+    if click.confirm(f"Save API key to {config_path}?", default=True):
+        try:
+            import yaml
+
+            # Determine which config to use
+            if not local_config.exists() and not user_config.exists():
+                # Neither exists, ask which to create
+                click.echo()
+                click.echo("Where should the config file be created?")
+                click.echo(f"  1. {local_config} (recommended for development)")
+                click.echo(f"  2. {user_config} (recommended for production)")
+                choice = click.prompt(
+                    "Choose", type=click.Choice(["1", "2"]), default="1"
+                )
+                config_path = local_config if choice == "1" else user_config
+
+            # Load existing config or create from example
+            if config_path.exists():
+                with open(config_path) as f:
+                    config_data = yaml.safe_load(f) or {}
+            else:
+                # Create from example
+                example_path = Path("./config.yaml.example")
+                if example_path.exists():
+                    with open(example_path) as f:
+                        config_data = yaml.safe_load(f) or {}
+                else:
+                    # Create minimal config
+                    config_data = {
+                        "database_path": "./db.sqlite"
+                        if config_path == local_config
+                        else str(Path.home() / ".business-use" / "db.sqlite"),
+                        "log_level": "info",
+                        "debug": False,
+                        "env": "local",
+                    }
+
+            # Update API key
+            config_data["api_key"] = api_key
+
+            # Ensure parent directory exists
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write config
+            with open(config_path, "w") as f:
+                yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+            click.echo()
+            click.secho(f"✓ Configuration saved to: {config_path}", fg="green")
+
+        except Exception as e:
+            click.secho(f"✗ Failed to save config: {e}", fg="red")
+            click.echo()
+            click.echo("You can manually create the config file with:")
+            click.echo(f"  echo 'api_key: {api_key}' > {config_path}")
+            raise click.Abort() from e
+    else:
+        click.echo()
+        click.echo("API key not saved. To save it later, add this to your config.yaml:")
+        click.secho(f"  api_key: {api_key}", fg="yellow")
+
+    # Ask about database migration
+    click.echo()
+    if not check_database_exists():
+        if click.confirm("Initialize database now?", default=True):
+            click.echo()
+            click.secho("Running database migrations...", fg="cyan")
+            try:
+                alembic_cfg = get_alembic_config()
+                command.upgrade(alembic_cfg, "head")
+                click.secho("✓ Database initialized successfully", fg="green")
+            except Exception as e:
+                click.secho(f"✗ Database migration failed: {e}", fg="red")
+                click.echo()
+                click.echo("You can run migrations manually with:")
+                click.secho("  business-use db migrate", fg="yellow")
+        else:
+            click.echo()
+            click.echo("Skipping database initialization. Run this later:")
+            click.secho("  business-use db migrate", fg="yellow")
+    else:
+        click.secho("✓ Database already exists", fg="green")
+
+    # Show next steps
+    click.echo()
+    click.secho("=" * 60, fg="cyan")
+    click.secho("✨ Setup Complete!", fg="green", bold=True)
+    click.echo()
+    click.echo("Next steps:")
+    click.echo("  1. Start the server:")
+    click.secho("     business-use serve --reload", fg="green")
+    click.echo()
+    click.echo("  2. Test with SDKs using this API key:")
+    click.secho(f"     export BUSINESS_USE_API_KEY={api_key}", fg="yellow")
+    click.secho("     export BUSINESS_USE_URL=http://localhost:13370", fg="yellow")
+    click.secho("=" * 60, fg="cyan")
 
 
 @cli.group()
@@ -62,6 +286,8 @@ def serve(host: str, port: int, reload: bool) -> None:
         cli serve --port 8000        # Run on custom port
         cli serve --reload           # Run with auto-reload for development
     """
+    ensure_api_key_or_exit()
+
     import uvicorn
 
     click.echo(f"Starting API server on {host}:{port}")
@@ -88,6 +314,8 @@ def prod(host: str, port: int, workers: int) -> None:
         cli prod --port 8000         # Run on custom port
         cli prod --workers 8         # Run with 8 worker processes
     """
+    ensure_api_key_or_exit()
+
     import uvicorn
 
     click.echo(f"Starting API server in production mode on {host}:{port}")
@@ -225,6 +453,8 @@ def eval_run(
         cli eval-run run_123 checkout --json-output # Output as JSON
         cli eval-run run_123 checkout --start-node payment_processed  # Subgraph eval
     """
+    ensure_database_or_exit()
+
     from src.eval import eval_flow_run
 
     async def run_evaluation():
@@ -388,6 +618,8 @@ def show_graph(flow: str | None, nodes_only: bool) -> None:
         cli show-graph checkout           # Show checkout flow graph
         cli show-graph checkout --nodes-only  # Just list nodes
     """
+    ensure_database_or_exit()
+
     import asyncio
 
     from src.adapters.sqlite import SqliteEventStorage
@@ -547,6 +779,8 @@ def sync_nodes(path: Path) -> None:
         cli sync-nodes .business-use/checkout.yaml    # Sync single file
         cli sync-nodes .business-use/                 # Sync all YAML files in directory
     """
+    ensure_database_or_exit()
+
     import asyncio
 
     from src.db.transactional import transactional
@@ -660,6 +894,8 @@ def export_nodes(flow: str, output: Path | None) -> None:
         cli export-nodes checkout checkout.yaml        # Save to file
         cli export-nodes checkout .business-use/checkout.yaml  # Save to specific path
     """
+    ensure_database_or_exit()
+
     import asyncio
 
     from src.adapters.sqlite import SqliteEventStorage
@@ -741,6 +977,8 @@ def runs(
         cli runs --verbose                # Show detailed execution info
         cli runs --json-output            # Output as JSON
     """
+    ensure_database_or_exit()
+
     import asyncio
 
     from sqlalchemy import desc

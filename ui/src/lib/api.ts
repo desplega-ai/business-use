@@ -53,7 +53,7 @@ class ApiClient {
 
   async checkConnection(): Promise<boolean> {
     try {
-      await this.request("/v1/check");
+      await this.request("/v1/status");
       return true;
     } catch {
       return false;
