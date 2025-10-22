@@ -77,6 +77,6 @@ class EvalInput(BaseModel):
     """
 
     # Required fields
-    run_id: str | None = None
-    flow: str | None = None
+    run_id: str
+    flow: str
     start_node_id: str | None = None

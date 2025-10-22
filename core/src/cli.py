@@ -138,7 +138,9 @@ def init() -> None:
     click.secho("Generated API Key:", fg="green", bold=True)
     click.secho(f"  {api_key}", fg="yellow")
     click.echo()
-    click.echo("⚠️  Save this key securely - you'll need it to authenticate API requests.")
+    click.echo(
+        "⚠️  Save this key securely - you'll need it to authenticate API requests."
+    )
     click.echo()
 
     # Ask to save to config
@@ -153,7 +155,9 @@ def init() -> None:
                 click.echo("Where should the config file be created?")
                 click.echo(f"  1. {local_config} (recommended for development)")
                 click.echo(f"  2. {user_config} (recommended for production)")
-                choice = click.prompt("Choose", type=click.Choice(["1", "2"]), default="1")
+                choice = click.prompt(
+                    "Choose", type=click.Choice(["1", "2"]), default="1"
+                )
                 config_path = local_config if choice == "1" else user_config
 
             # Load existing config or create from example
@@ -169,7 +173,9 @@ def init() -> None:
                 else:
                     # Create minimal config
                     config_data = {
-                        "database_path": "./db.sqlite" if config_path == local_config else str(Path.home() / ".business-use" / "db.sqlite"),
+                        "database_path": "./db.sqlite"
+                        if config_path == local_config
+                        else str(Path.home() / ".business-use" / "db.sqlite"),
                         "log_level": "info",
                         "debug": False,
                         "env": "local",

@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 async def eval_flow_run(
     run_id: str,
     flow: str,
-    trigger_ev_id: str | None = None,
     start_node_id: str | None = None,
 ) -> BaseEvalOutput:
     """Evaluate flow execution for a specific run.
@@ -39,7 +38,6 @@ async def eval_flow_run(
     Args:
         run_id: The run identifier (e.g., user session, order ID)
         flow: The flow identifier (e.g., "checkout", "onboarding")
-        trigger_ev_id: Optional event that triggered this evaluation
         start_node_id: Optional node to start evaluation from (subgraph only)
 
     Returns:

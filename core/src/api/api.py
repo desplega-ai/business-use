@@ -198,12 +198,6 @@ async def run_eval(
     """
     from src.eval import eval_flow_run
 
-    if not body.run_id or not body.flow:
-        raise HTTPException(
-            status_code=400,
-            detail="Must provide both run_id and flow",
-        )
-
     result = await eval_flow_run(
         run_id=body.run_id,
         flow=body.flow,
@@ -221,6 +215,7 @@ async def run_eval(
             created_at=now(),
             status="active",
         )
+
         session.add(eval_output)
         await session.commit()
 
