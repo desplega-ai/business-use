@@ -1,0 +1,40 @@
+flow: payment_approval
+nodes:
+  # Trigger node - creates a payment via API
+  - id: create_payment
+    type: trigger
+    flow: payment_approval
+    description: Create payment via API and extract payment_id
+    handler: http_request
+    handler_input:
+      params:
+        url: "${secret.API_BASE_URL}/products/1"
+        method: GET
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer ${secret.PAYMENT_API_KEY}"
+        body: ''
+        timeout_ms: 10000
+        # Extract run_id from API response
+        run_id_extractor:
+          engine: python
+          script: "str(output['id'])"
+
+  # Act node - wait for payment confirmation
+  - id: payment_confirmed
+    type: act
+    description: Payment confirmation webhook received
+    dep_ids: [create_payment]
+    conditions:
+      - timeout_ms: 30000  # Wait up to 30s for confirmation
+
+  # Assert node - verify receipt was sent
+  - id: receipt_sent
+    type: assert
+    description: Verify receipt was sent to customer
+    dep_ids: [payment_confirmed]
+    validator:
+      engine: python
+      script: "data.get('receipt_sent') == True"
+    conditions:
+      - timeout_ms: 5000

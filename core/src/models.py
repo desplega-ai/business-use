@@ -75,6 +75,10 @@ class ActionInputParams(BaseModel):
 
     command: str | None = None
 
+    # Run ID extractor for trigger nodes
+    # Python expression to extract run_id from trigger context (input + output)
+    run_id_extractor: Expr | None = None
+
 
 class ActionInput(BaseModel):
     input_schema: dict[str, Any] | None = None
@@ -217,6 +221,9 @@ class Node(AuditBase, table=True):
 
         if isinstance(self.validator, dict):
             self.validator = Expr.model_validate(self.validator)
+
+        if isinstance(self.handler_input, dict):
+            self.handler_input = ActionInput.model_validate(self.handler_input)
 
         if isinstance(self.conditions, list):
             self.conditions = [

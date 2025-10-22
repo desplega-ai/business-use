@@ -11,24 +11,37 @@ def load_config() -> dict[str, Any]:
     """Load configuration from YAML file with fallback chain.
 
     Priority:
-    1. ./config.yaml (development)
-    2. ~/.business-use/config.yaml (production/PyPI users)
-    3. Defaults
+    1. ./.business-use/config.yaml (project-level, highest priority)
+    2. ./config.yaml (legacy support, will be deprecated)
+    3. ~/.business-use/config.yaml (global fallback)
+    4. Defaults
 
     Returns:
         Configuration dictionary with all settings
     """
     config_data: dict[str, Any] = {}
 
-    # Try local config first (development)
+    # Priority 1: Project-level workspace config
+    project_config = Path(".business-use") / "config.yaml"
+
+    # Priority 2: Legacy local config (backward compatibility)
     local_config = Path("./config.yaml")
+
+    # Priority 3: Global config
     user_config = Path.home() / ".business-use" / "config.yaml"
 
     loaded_from = None
-    if local_config.exists():
+    if project_config.exists():
+        with open(project_config) as f:
+            config_data = yaml.safe_load(f) or {}
+        loaded_from = str(project_config)
+    elif local_config.exists():
         with open(local_config) as f:
             config_data = yaml.safe_load(f) or {}
         loaded_from = str(local_config)
+        log.warning(
+            f"Config found at {local_config} - consider moving to .business-use/config.yaml"
+        )
     elif user_config.exists():
         with open(user_config) as f:
             config_data = yaml.safe_load(f) or {}
@@ -45,8 +58,10 @@ def load_config() -> dict[str, Any]:
 # Load configuration
 _config = load_config()
 
-# Determine if we're in development mode (local config exists)
-_is_dev = Path("./config.yaml").exists()
+# Determine if we're in development mode (project config or legacy config exists)
+_is_dev = (Path(".business-use") / "config.yaml").exists() or Path(
+    "./config.yaml"
+).exists()
 
 # Log level configuration
 LOG_LEVEL: Any = _config.get("log_level", logging.WARNING)
@@ -57,9 +72,11 @@ DEBUG: bool = _config.get("debug", False)
 API_KEY: Final[str | None] = _config.get("api_key")
 
 # Database configuration
-# Use local db.sqlite in dev, ~/.business-use/db.sqlite in production
+# Use .business-use/db.sqlite in dev, ~/.business-use/db.sqlite in production
 _default_db_path = (
-    "./db.sqlite" if _is_dev else str(Path.home() / ".business-use" / "db.sqlite")
+    "./.business-use/db.sqlite"
+    if _is_dev
+    else str(Path.home() / ".business-use" / "db.sqlite")
 )
 DATABASE_PATH: Final[str] = _config.get("database_path", _default_db_path)
 

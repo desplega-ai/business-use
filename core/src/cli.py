@@ -6,6 +6,7 @@ import warnings
 from pathlib import Path
 
 import click
+import questionary
 from alembic import command
 from alembic.config import Config as AlembicConfig
 
@@ -110,6 +111,59 @@ def generate_api_key() -> str:
     return secrets.token_urlsafe(32)
 
 
+def mask_api_key(api_key: str) -> str:
+    """Mask an API key for display purposes.
+
+    Shows first 6 and last 3 characters, masks the middle.
+    Example: sk_abc...xyz
+    """
+    if len(api_key) <= 9:
+        return "*" * len(api_key)
+    return f"{api_key[:6]}...{api_key[-3:]}"
+
+
+def find_workspace() -> Path | None:
+    """Find the Business-Use workspace directory.
+
+    Priority:
+    1. ./.business-use/ (project-level)
+    2. ~/.business-use/ (global)
+
+    Returns:
+        Path to workspace directory if found, None otherwise
+    """
+    # Check project-level workspace first
+    local_workspace = Path("./.business-use")
+    if local_workspace.exists() and local_workspace.is_dir():
+        return local_workspace
+
+    # Check global workspace
+    global_workspace = Path.home() / ".business-use"
+    if global_workspace.exists() and global_workspace.is_dir():
+        return global_workspace
+
+    return None
+
+
+def ensure_workspace_or_exit() -> Path:
+    """Find workspace or exit with helpful message.
+
+    Returns:
+        Path to workspace directory
+
+    Raises:
+        click.Abort if no workspace found
+    """
+    workspace = find_workspace()
+    if workspace is None:
+        click.secho("✗ No workspace found!", fg="red", bold=True)
+        click.echo()
+        click.echo("Run 'business-use workspace init' to create .business-use/")
+        click.echo("Or provide a path explicitly")
+        raise click.Abort()
+    return workspace
+
+
 @click.group()
 def cli() -> None:
     """Business-Use CLI - Database management and utilities."""
@@ -125,22 +179,62 @@ def init() -> None:
     - Create config.yaml if it doesn't exist
     - Optionally run database migrations
 
+    If already initialized, use 'business-use config' to modify settings.
+
     Examples:
         business-use init    # Interactive first-time setup
     """
     click.secho("🚀 Business-Use First-Time Setup", fg="cyan", bold=True)
     click.echo()
 
-    # Check if config already exists
+    # Check if config already exists (check all locations)
+    project_config = Path(".business-use") / "config.yaml"
     local_config = Path("./config.yaml")
     user_config = Path.home() / ".business-use" / "config.yaml"
 
-    config_path = local_config if local_config.exists() else user_config
-    config_exists = config_path.exists()
-
-    if config_exists:
-        click.echo(f"Found existing config: {config_path}")
+    if project_config.exists() or local_config.exists() or user_config.exists():
+        # Prefer project config, then local (legacy), then global
+        if project_config.exists():
+            config_path = project_config
+        elif local_config.exists():
+            config_path = local_config
+        else:
+            config_path = user_config
+        click.secho("✓ Already initialized!", fg="green", bold=True)
+        click.echo(f"Configuration file: {config_path}")
         click.echo()
+        click.echo("To modify your configuration, use:")
+        click.secho("  business-use config", fg="cyan", bold=True)
+        click.echo()
+
+        # Check database status
+        if not check_database_exists():
+            click.echo("Note: Database not initialized yet.")
+            if click.confirm("Initialize database now?", default=True):
+                click.echo()
+                click.secho("Running database migrations...", fg="cyan")
+                try:
+                    alembic_cfg = get_alembic_config()
+                    command.upgrade(alembic_cfg, "head")
+                    click.secho("✓ Database initialized successfully", fg="green")
+                except Exception as e:
+                    click.secho(f"✗ Database migration failed: {e}", fg="red")
+                    click.echo()
+                    click.echo("You can run migrations manually with:")
+                    click.secho("  business-use db migrate", fg="yellow")
+        return
+
+    # First-time setup
+    click.echo("No configuration found. Let's set up Business-Use!")
+    click.echo()
+
+    # Ask which config location to use
+    click.echo("Where should the config file be created?")
+    click.echo(f"  1. {project_config} (recommended for project-level)")
+    click.echo(f"  2. {user_config} (recommended for global/production)")
+    choice = click.prompt("Choose", type=click.Choice(["1", "2"]), default="1")
+    config_path = project_config if choice == "1" else user_config
+    click.echo()
 
     # Generate API key
     api_key = generate_api_key()
@@ -152,89 +246,63 @@ def init() -> None:
     )
     click.echo()
 
-    # Ask to save to config
-    if click.confirm(f"Save API key to {config_path}?", default=True):
-        try:
-            import yaml
+    # Create config
+    try:
+        import yaml
 
-            # Determine which config to use
-            if not local_config.exists() and not user_config.exists():
-                # Neither exists, ask which to create
-                click.echo()
-                click.echo("Where should the config file be created?")
-                click.echo(f"  1. {local_config} (recommended for development)")
-                click.echo(f"  2. {user_config} (recommended for production)")
-                choice = click.prompt(
-                    "Choose", type=click.Choice(["1", "2"]), default="1"
-                )
-                config_path = local_config if choice == "1" else user_config
-
-            # Load existing config or create from example
-            if config_path.exists():
-                with open(config_path) as f:
-                    config_data = yaml.safe_load(f) or {}
-            else:
-                # Create from example
-                example_path = Path("./config.yaml.example")
-                if example_path.exists():
-                    with open(example_path) as f:
-                        config_data = yaml.safe_load(f) or {}
-                else:
-                    # Create minimal config
-                    config_data = {
-                        "database_path": "./db.sqlite"
-                        if config_path == local_config
-                        else str(Path.home() / ".business-use" / "db.sqlite"),
-                        "log_level": "info",
-                        "debug": False,
-                        "env": "local",
-                    }
-
-            # Update API key
-            config_data["api_key"] = api_key
-
-            # Ensure parent directory exists
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Write config
-            with open(config_path, "w") as f:
-                yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
-
-            click.echo()
-            click.secho(f"✓ Configuration saved to: {config_path}", fg="green")
-
-        except Exception as e:
-            click.secho(f"✗ Failed to save config: {e}", fg="red")
-            click.echo()
-            click.echo("You can manually create the config file with:")
-            click.echo(f"  echo 'api_key: {api_key}' > {config_path}")
-            raise click.Abort() from e
-    else:
-        click.echo()
-        click.echo("API key not saved. To save it later, add this to your config.yaml:")
-        click.secho(f"  api_key: {api_key}", fg="yellow")
-
-    # Ask about database migration
-    click.echo()
-    if not check_database_exists():
-        if click.confirm("Initialize database now?", default=True):
-            click.echo()
-            click.secho("Running database migrations...", fg="cyan")
-            try:
-                alembic_cfg = get_alembic_config()
-                command.upgrade(alembic_cfg, "head")
-                click.secho("✓ Database initialized successfully", fg="green")
-            except Exception as e:
-                click.secho(f"✗ Database migration failed: {e}", fg="red")
-                click.echo()
-                click.echo("You can run migrations manually with:")
-                click.secho("  business-use db migrate", fg="yellow")
+        # Create from example or minimal defaults
+        example_path = Path("./config.yaml.example")
+        if example_path.exists():
+            with open(example_path) as f:
+                config_data = yaml.safe_load(f) or {}
         else:
+            # Create minimal config
+            config_data = {
+                "database_path": "./.business-use/db.sqlite"
+                if config_path == project_config
+                else str(Path.home() / ".business-use" / "db.sqlite"),
+                "log_level": "info",
+                "debug": False,
+                "env": "local",
+            }
+
+        # Set API key
+        config_data["api_key"] = api_key
+
+        # Ensure parent directory exists
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write config
+        with open(config_path, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+        click.secho(f"✓ Configuration saved to: {config_path}", fg="green")
+
+    except Exception as e:
+        click.secho(f"✗ Failed to save config: {e}", fg="red")
+        click.echo()
+        click.echo("You can manually create the config file with:")
+        click.echo(f"  echo 'api_key: {api_key}' > {config_path}")
+        raise click.Abort() from e
+
+    # Initialize database
+    click.echo()
+    if click.confirm("Initialize database now?", default=True):
+        click.echo()
+        click.secho("Running database migrations...", fg="cyan")
+        try:
+            alembic_cfg = get_alembic_config()
+            command.upgrade(alembic_cfg, "head")
+            click.secho("✓ Database initialized successfully", fg="green")
+        except Exception as e:
+            click.secho(f"✗ Database migration failed: {e}", fg="red")
             click.echo()
-            click.echo("Skipping database initialization. Run this later:")
+            click.echo("You can run migrations manually with:")
             click.secho("  business-use db migrate", fg="yellow")
     else:
-        click.secho("✓ Database already exists", fg="green")
+        click.echo()
+        click.echo("Skipping database initialization. Run this later:")
+        click.secho("  business-use db migrate", fg="yellow")
 
     # Show next steps
     click.echo()
@@ -248,6 +316,312 @@ def init() -> None:
     click.echo("  2. Test with SDKs using this API key:")
     click.secho(f"     export BUSINESS_USE_API_KEY={api_key}", fg="yellow")
     click.secho("     export BUSINESS_USE_URL=http://localhost:13370", fg="yellow")
+    click.echo()
+    click.echo("  3. To modify configuration later:")
+    click.secho("     business-use config", fg="cyan")
+    click.secho("=" * 60, fg="cyan")
+
+
+@cli.command()
+def config() -> None:
+    """Interactively view and modify Business-Use configuration.
+
+    This command provides an interactive menu to:
+    - View current configuration
+    - Regenerate API key
+    - Change database path
+    - Set log level
+    - Toggle debug mode
+    - Set environment name
+
+    Examples:
+        business-use config    # Interactive configuration menu
+    """
+    import yaml
+
+    click.secho("⚙️  Business-Use Configuration", fg="cyan", bold=True)
+    click.echo()
+
+    # Find config file (check all locations)
+    project_config = Path(".business-use") / "config.yaml"
+    local_config = Path("./config.yaml")
+    user_config = Path.home() / ".business-use" / "config.yaml"
+
+    if project_config.exists():
+        config_path = project_config
+    elif local_config.exists():
+        config_path = local_config
+        click.secho("⚠️  Using legacy config at ./config.yaml", fg="yellow")
+        click.echo("Consider moving to .business-use/config.yaml")
+        click.echo()
+    elif user_config.exists():
+        config_path = user_config
+    else:
+        click.secho("✗ No configuration found!", fg="red", bold=True)
+        click.echo()
+        click.echo("Run first-time setup with:")
+        click.secho("  business-use init", fg="cyan", bold=True)
+        raise click.Abort()
+
+    # Load current config
+    with open(config_path) as f:
+        config_data = yaml.safe_load(f) or {}
+
+    # Interactive menu loop
+    while True:
+        click.clear()
+        click.secho("⚙️  Business-Use Configuration", fg="cyan", bold=True)
+        click.echo(f"Config file: {config_path}")
+        click.echo()
+
+        # Display current config
+        click.secho("Current Configuration:", fg="white", bold=True)
+        click.echo("-" * 60)
+
+        api_key = config_data.get("api_key", "")
+        if api_key:
+            click.echo(f"  API Key:       {mask_api_key(api_key)}")
+        else:
+            click.secho("  API Key:       (not configured)", fg="yellow")
+
+        db_path = config_data.get("database_path", "")
+        click.echo(f"  Database:      {db_path or '(not configured)'}")
+
+        log_level = config_data.get("log_level", "info")
+        click.echo(f"  Log Level:     {log_level}")
+
+        debug = config_data.get("debug", False)
+        click.echo(f"  Debug Mode:    {debug}")
+
+        env = config_data.get("env", "local")
+        click.echo(f"  Environment:   {env}")
+
+        click.echo("-" * 60)
+        click.echo()
+
+        # Menu options
+        choices = [
+            "Regenerate API key",
+            "Change database path",
+            "Set log level",
+            f"Toggle debug mode (currently: {debug})",
+            "Set environment name",
+            "Save and exit",
+        ]
+
+        try:
+            choice = questionary.select(
+                "What would you like to do?",
+                choices=choices,
+                style=questionary.Style(
+                    [
+                        ("highlighted", "fg:cyan bold"),
+                        ("pointer", "fg:cyan bold"),
+                    ]
+                ),
+            ).ask()
+
+            if choice is None:  # User pressed Ctrl+C
+                click.echo()
+                click.secho("Configuration not saved.", fg="yellow")
+                raise click.Abort()
+
+            if choice == "Save and exit":
+                break
+
+            elif choice == "Regenerate API key":
+                confirm = questionary.confirm(
+                    "⚠️  This will generate a new API key. The old key will stop working. Continue?",
+                    default=False,
+                ).ask()
+
+                if confirm:
+                    new_key = generate_api_key()
+                    config_data["api_key"] = new_key
+                    click.echo()
+                    click.secho("✓ New API key generated:", fg="green")
+                    click.secho(f"  {new_key}", fg="yellow")
+                    click.echo()
+                    click.echo("⚠️  Save this key securely!")
+                    click.echo()
+                    questionary.press_any_key_to_continue(
+                        "Press any key to continue..."
+                    ).ask()
+
+            elif choice == "Change database path":
+                current = config_data.get("database_path", "./db.sqlite")
+                new_path = questionary.text(
+                    "Enter database path:", default=current
+                ).ask()
+
+                if new_path and new_path != current:
+                    config_data["database_path"] = new_path
+                    click.secho(f"✓ Database path updated to: {new_path}", fg="green")
+                    click.echo()
+                    questionary.press_any_key_to_continue(
+                        "Press any key to continue..."
+                    ).ask()
+
+            elif choice == "Set log level":
+                new_level = questionary.select(
+                    "Choose log level:",
+                    choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+                    default=config_data.get("log_level", "INFO").upper(),
+                ).ask()
+
+                if new_level:
+                    config_data["log_level"] = new_level.lower()
+                    click.secho(f"✓ Log level set to: {new_level}", fg="green")
+                    click.echo()
+                    questionary.press_any_key_to_continue(
+                        "Press any key to continue..."
+                    ).ask()
+
+            elif choice.startswith("Toggle debug mode"):
+                current_debug = config_data.get("debug", False)
+                config_data["debug"] = not current_debug
+                new_state = "enabled" if not current_debug else "disabled"
+                click.secho(f"✓ Debug mode {new_state}", fg="green")
+                click.echo()
+                questionary.press_any_key_to_continue(
+                    "Press any key to continue..."
+                ).ask()
+
+            elif choice == "Set environment name":
+                current = config_data.get("env", "local")
+                new_env = questionary.text(
+                    "Enter environment name:", default=current
+                ).ask()
+
+                if new_env and new_env != current:
+                    config_data["env"] = new_env
+                    click.secho(f"✓ Environment set to: {new_env}", fg="green")
+                    click.echo()
+                    questionary.press_any_key_to_continue(
+                        "Press any key to continue..."
+                    ).ask()
+
+        except KeyboardInterrupt:
+            click.echo()
+            click.secho("Configuration not saved.", fg="yellow")
+            raise click.Abort() from None
+
+    # Save config
+    try:
+        with open(config_path, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+        click.echo()
+        click.secho("=" * 60, fg="cyan")
+        click.secho("✓ Configuration saved successfully!", fg="green", bold=True)
+        click.echo(f"Location: {config_path}")
+        click.secho("=" * 60, fg="cyan")
+
+    except Exception as e:
+        click.secho(f"✗ Failed to save config: {e}", fg="red")
+        raise click.Abort() from e
+
+
+@cli.group()
+def workspace() -> None:
+    """Workspace management commands."""
+    pass
+
+
+@workspace.command(name="init")
+@click.option("--global", "is_global", is_flag=True, help="Create global workspace")
+def workspace_init(is_global: bool) -> None:
+    """Initialize a Business-Use workspace directory.
+
+    Creates .business-use/ directory with:
+    - .gitkeep file (ensures git tracks the directory)
+    - example.yaml (sample flow definition)
+
+    By default creates project-level workspace (./.business-use/).
+    Use --global to create global workspace (~/.business-use/).
+
+    Examples:
+        business-use workspace init           # Create project workspace
+        business-use workspace init --global  # Create global workspace
+    """
+    import yaml
+
+    # Determine workspace path
+    if is_global:
+        workspace_path = Path.home() / ".business-use"
+        workspace_type = "global"
+    else:
+        workspace_path = Path("./.business-use")
+        workspace_type = "project"
+
+    click.secho(f"🚀 Initializing {workspace_type} workspace", fg="cyan", bold=True)
+    click.echo(f"Location: {workspace_path}")
+    click.echo()
+
+    # Check if workspace already exists
+    if workspace_path.exists():
+        click.secho(f"✓ Workspace already exists at {workspace_path}", fg="yellow")
+        if not click.confirm("Overwrite existing files?", default=False):
+            click.echo("Cancelled.")
+            return
+
+    # Create workspace directory
+    workspace_path.mkdir(parents=True, exist_ok=True)
+
+    # Create .gitkeep
+    gitkeep_path = workspace_path / ".gitkeep"
+    gitkeep_path.touch()
+    click.secho(f"✓ Created {gitkeep_path}", fg="green")
+
+    # Create example.yaml
+    example_path = workspace_path / "example.yaml"
+    example_content = {
+        "flow": "example",
+        "nodes": [
+            {
+                "id": "step_1",
+                "type": "act",
+                "description": "First step in the flow",
+            },
+            {
+                "id": "step_2",
+                "type": "act",
+                "description": "Second step, depends on step_1",
+                "dep_ids": ["step_1"],
+                "conditions": [{"timeout_ms": 5000}],
+            },
+            {
+                "id": "step_3",
+                "type": "assert",
+                "description": "Final validation step",
+                "dep_ids": ["step_2"],
+                "validator": {
+                    "engine": "python",
+                    "script": "data.get('status') == 'complete'",
+                },
+            },
+        ],
+    }
+
+    with open(example_path, "w") as f:
+        yaml.dump(example_content, f, default_flow_style=False, sort_keys=False)
+
+    click.secho(f"✓ Created {example_path}", fg="green")
+
+    # Show next steps
+    click.echo()
+    click.secho("=" * 60, fg="cyan")
+    click.secho("✨ Workspace initialized!", fg="green", bold=True)
+    click.echo()
+    click.echo("Next steps:")
+    click.echo(f"  1. Edit flow definitions in {workspace_path}/")
+    click.secho("     cp example.yaml my-flow.yaml", fg="yellow")
+    click.echo()
+    click.echo("  2. Sync flows to database:")
+    click.secho("     business-use nodes sync", fg="green")
+    click.echo()
+    click.echo("  3. View flow graphs:")
+    click.secho("     business-use flow graph", fg="green")
     click.secho("=" * 60, fg="cyan")
 
 
@@ -274,17 +648,23 @@ def migrate(revision: str) -> None:
     click.echo("✓ Migrations completed successfully")
 
 
-@cli.command()
+@cli.group()
+def server() -> None:
+    """Server management commands."""
+    pass
+
+
+@server.command()
 @click.option("--host", default="0.0.0.0", help="Host to bind to")
 @click.option("--port", default=13370, help="Port to bind to")
 @click.option("--reload", is_flag=True, help="Enable auto-reload for development")
-def serve(host: str, port: int, reload: bool) -> None:
+def dev(host: str, port: int, reload: bool) -> None:
     """Run the FastAPI server in development mode.
 
     Examples:
-        cli serve                    # Run on default port 13370
-        cli serve --port 8000        # Run on custom port
-        cli serve --reload           # Run with auto-reload for development
+        business-use server dev                    # Run on default port 13370
+        business-use server dev --port 8000        # Run on custom port
+        business-use server dev --reload           # Run with auto-reload
     """
     ensure_api_key_or_exit()
 
@@ -302,7 +682,7 @@ def serve(host: str, port: int, reload: bool) -> None:
     )
 
 
-@cli.command()
+@server.command()
 @click.option("--host", default="0.0.0.0", help="Host to bind to")
 @click.option("--port", default=13370, help="Port to bind to")
 @click.option("--workers", default=4, help="Number of worker processes")
@@ -310,9 +690,9 @@ def prod(host: str, port: int, workers: int) -> None:
     """Run the FastAPI server in production mode with multiple workers.
 
     Examples:
-        cli prod                     # Run on default port 13370 with 4 workers
-        cli prod --port 8000         # Run on custom port
-        cli prod --workers 8         # Run with 8 worker processes
+        business-use server prod                     # Run on default port with 4 workers
+        business-use server prod --port 8000         # Run on custom port
+        business-use server prod --workers 8         # Run with 8 workers
     """
     ensure_api_key_or_exit()
 
@@ -329,6 +709,12 @@ def prod(host: str, port: int, workers: int) -> None:
         log_level="info",
         access_log=True,
     )
+
+
+@cli.group()
+def flow() -> None:
+    """Flow evaluation and visualization commands."""
+    pass
 
 
 def render_graph(graph: dict[str, list[str]], status_map: dict[str, str]) -> str:
@@ -421,9 +807,9 @@ def render_graph(graph: dict[str, list[str]], status_map: dict[str, str]) -> str
     return "\n".join(lines)
 
 
-@cli.command()
+@flow.command()
 @click.argument("run_id")
-@click.argument("flow")
+@click.argument("flow_name")
 @click.option(
     "--start-node", default=None, help="Start evaluation from specific node (subgraph)"
 )
@@ -432,9 +818,9 @@ def render_graph(graph: dict[str, list[str]], status_map: dict[str, str]) -> str
     "--verbose", "-v", is_flag=True, help="Verbose output with execution details"
 )
 @click.option("--show-graph", "-g", is_flag=True, help="Show ASCII graph visualization")
-def eval_run(
+def eval(
     run_id: str,
-    flow: str,
+    flow_name: str,
     start_node: str | None,
     json_output: bool,
     verbose: bool,
@@ -446,12 +832,12 @@ def eval_run(
     the expected flow graph, checking dependencies, timeouts, and conditions.
 
     Examples:
-        cli eval-run run_123 checkout              # Evaluate checkout flow for run_123
-        cli eval-run run_123 checkout --verbose    # With detailed execution info
-        cli eval-run run_123 checkout --show-graph # Show ASCII graph visualization
-        cli eval-run run_123 checkout -g -v        # Graph + verbose details
-        cli eval-run run_123 checkout --json-output # Output as JSON
-        cli eval-run run_123 checkout --start-node payment_processed  # Subgraph eval
+        business-use flow eval run_123 checkout              # Evaluate checkout flow
+        business-use flow eval run_123 checkout --verbose    # With detailed execution
+        business-use flow eval run_123 checkout --show-graph # Show ASCII graph
+        business-use flow eval run_123 checkout -g -v        # Graph + verbose
+        business-use flow eval run_123 checkout --json-output # Output as JSON
+        business-use flow eval run_123 checkout --start-node payment_processed  # Subgraph
     """
     ensure_database_or_exit()
 
@@ -459,13 +845,13 @@ def eval_run(
 
     async def run_evaluation():
         try:
-            click.echo(f"Evaluating flow run: run_id={run_id}, flow={flow}")
+            click.echo(f"Evaluating flow run: run_id={run_id}, flow={flow_name}")
             if start_node:
                 click.echo(f"Starting from node: {start_node}")
 
             result = await eval_flow_run(
                 run_id=run_id,
-                flow=flow,
+                flow=flow_name,
                 start_node_id=start_node,
             )
 
@@ -602,21 +988,21 @@ def eval_run(
     asyncio.run(run_evaluation())
 
 
-@cli.command()
-@click.argument("flow", required=False)
+@flow.command()
+@click.argument("flow_name", required=False)
 @click.option(
     "--nodes-only", is_flag=True, help="Show only node names without visualization"
 )
-def show_graph(flow: str | None, nodes_only: bool) -> None:
+def graph(flow_name: str | None, nodes_only: bool) -> None:
     """Show the flow graph definition without running evaluation.
 
     Displays the graph structure for a flow based on node definitions.
     If no flow is specified, shows an interactive list to choose from.
 
     Examples:
-        cli show-graph                    # Interactive flow selection
-        cli show-graph checkout           # Show checkout flow graph
-        cli show-graph checkout --nodes-only  # Just list nodes
+        business-use flow graph                    # Interactive flow selection
+        business-use flow graph checkout           # Show checkout flow graph
+        business-use flow graph checkout --nodes-only  # Just list nodes
     """
     ensure_database_or_exit()
 
@@ -631,7 +1017,7 @@ def show_graph(flow: str | None, nodes_only: bool) -> None:
             storage = SqliteEventStorage()
 
             # If no flow specified, show interactive selection
-            if not flow:
+            if not flow_name:
                 async with transactional() as session:
                     all_nodes = await storage.get_all_nodes(session)
 
@@ -647,9 +1033,9 @@ def show_graph(flow: str | None, nodes_only: bool) -> None:
                     return
 
                 click.echo("Available flows:")
-                for idx, flow_name in enumerate(flows, 1):
-                    node_count = sum(1 for n in all_nodes if n.flow == flow_name)
-                    click.echo(f"  {idx}. {flow_name} ({node_count} nodes)")
+                for idx, f_name in enumerate(flows, 1):
+                    node_count = sum(1 for n in all_nodes if n.flow == f_name)
+                    click.echo(f"  {idx}. {f_name} ({node_count} nodes)")
 
                 # Prompt for selection
                 click.echo()
@@ -672,7 +1058,7 @@ def show_graph(flow: str | None, nodes_only: bool) -> None:
                     click.secho("\nCancelled", fg="yellow")
                     return
             else:
-                selected_flow = flow
+                selected_flow = flow_name
 
             # Fetch nodes for selected flow
             async with transactional() as session:
@@ -767,19 +1153,35 @@ def show_graph(flow: str | None, nodes_only: bool) -> None:
     asyncio.run(show_flow_graph())
 
 
-@cli.command()
-@click.argument("path", type=click.Path(exists=True, path_type=Path))
-def sync_nodes(path: Path) -> None:
+@cli.group()
+def nodes() -> None:
+    """Node definition management commands."""
+    pass
+
+
+@nodes.command()
+@click.argument("path", type=click.Path(exists=True, path_type=Path), required=False)
+def sync(path: Path | None) -> None:
     """Sync node definitions from YAML file(s) to the database.
 
     Supports syncing from a single YAML file or directory containing YAML files.
     Nodes are upserted (created or updated) with source='code'.
 
+    If no path is provided, automatically finds workspace directory:
+    - ./.business-use/ (project-level, priority)
+    - ~/.business-use/ (global fallback)
+
     Examples:
-        cli sync-nodes .business-use/checkout.yaml    # Sync single file
-        cli sync-nodes .business-use/                 # Sync all YAML files in directory
+        business-use nodes sync                        # Auto-find workspace
+        business-use nodes sync .business-use/checkout.yaml    # Sync single file
+        business-use nodes sync ./custom-flows/        # Sync custom directory
     """
     ensure_database_or_exit()
+
+    # If no path provided, use workspace hierarchy
+    if path is None:
+        path = ensure_workspace_or_exit()
+        click.echo(f"Using workspace: {path}")
 
     import asyncio
 
@@ -810,6 +1212,11 @@ def sync_nodes(path: Path) -> None:
             total_errors = 0
 
             for yaml_file in yaml_files:
+                if yaml_file.name.startswith(
+                    "secrets.yaml"
+                ) or yaml_file.name.startswith("config.yaml"):
+                    continue
+
                 try:
                     click.echo(
                         f"\nProcessing: {yaml_file.relative_to(Path.cwd()) if yaml_file.is_relative_to(Path.cwd()) else yaml_file}"
@@ -883,18 +1290,31 @@ def sync_nodes(path: Path) -> None:
     asyncio.run(sync_yaml_nodes())
 
 
-@cli.command()
-@click.argument("flow")
+@nodes.command()
+@click.argument("flow_name")
 @click.argument("output", type=click.Path(path_type=Path), required=False)
-def export_nodes(flow: str, output: Path | None) -> None:
+def export(flow_name: str, output: Path | None) -> None:
     """Export node definitions from database to YAML format.
 
+    If no output path is provided:
+    - Finds workspace (./.business-use/ or ~/.business-use/)
+    - Saves to <workspace>/<flow>.yaml
+    - Or prints to stdout if no workspace found
+
     Examples:
-        cli export-nodes checkout                      # Print to stdout
-        cli export-nodes checkout checkout.yaml        # Save to file
-        cli export-nodes checkout .business-use/checkout.yaml  # Save to specific path
+        business-use nodes export checkout                      # Save to workspace or stdout
+        business-use nodes export checkout checkout.yaml        # Save to file
+        business-use nodes export checkout ./custom/path.yaml   # Save to specific path
     """
     ensure_database_or_exit()
+
+    # If no output provided, try to use workspace
+    if output is None:
+        workspace = find_workspace()
+        if workspace:
+            output = workspace / f"{flow_name}.yaml"
+            click.echo(f"Exporting to workspace: {output}")
+        # If no workspace, will print to stdout (handled below)
 
     import asyncio
 
@@ -907,10 +1327,10 @@ def export_nodes(flow: str, output: Path | None) -> None:
             storage = SqliteEventStorage()
 
             async with transactional() as session:
-                nodes = await storage.get_nodes_by_flow(flow, session)
+                nodes = await storage.get_nodes_by_flow(flow_name, session)
 
             if not nodes:
-                click.secho(f"No nodes found for flow: {flow}", fg="yellow")
+                click.secho(f"No nodes found for flow: {flow_name}", fg="yellow")
                 return
 
             # Convert nodes to dictionaries
@@ -932,7 +1352,7 @@ def export_nodes(flow: str, output: Path | None) -> None:
                 node_dicts.append(node_dict)
 
             # Export to YAML
-            yaml_content = export_nodes_to_yaml(flow, node_dicts)
+            yaml_content = export_nodes_to_yaml(flow_name, node_dicts)
 
             if output:
                 # Write to file
@@ -951,7 +1371,7 @@ def export_nodes(flow: str, output: Path | None) -> None:
     asyncio.run(export_flow_nodes())
 
 
-@cli.command()
+@flow.command()
 @click.option("--flow", default=None, help="Filter by flow name")
 @click.option("--run-id", default=None, help="Filter by run ID")
 @click.option("--limit", default=10, help="Number of results to show")
@@ -970,12 +1390,12 @@ def runs(
     You can filter by flow name or run ID.
 
     Examples:
-        cli runs                          # Show last 10 runs
-        cli runs --flow checkout          # Show runs for checkout flow
-        cli runs --run-id run_123         # Show specific run
-        cli runs --limit 20               # Show last 20 runs
-        cli runs --verbose                # Show detailed execution info
-        cli runs --json-output            # Output as JSON
+        business-use flow runs                          # Show last 10 runs
+        business-use flow runs --flow checkout          # Show runs for checkout flow
+        business-use flow runs --run-id run_123         # Show specific run
+        business-use flow runs --limit 20               # Show last 20 runs
+        business-use flow runs --verbose                # Show detailed execution info
+        business-use flow runs --json-output            # Output as JSON
     """
     ensure_database_or_exit()
 
@@ -1132,16 +1552,245 @@ def runs(
     asyncio.run(show_runs())
 
 
-@cli.command()
-@click.argument("path", type=click.Path(exists=True, path_type=Path))
-def validate_nodes(path: Path) -> None:
-    """Validate YAML node definition file(s) without syncing to database.
+@flow.command()
+@click.argument("flow_name", required=False)
+@click.option("--parallel", "-p", default=1, help="Run N flows concurrently")
+@click.option(
+    "--polling-interval", default=2000, help="Poll interval in ms (default: 2000)"
+)
+@click.option("--max-timeout", default=30000, help="Max timeout in ms (default: 30000)")
+@click.option("--live", is_flag=True, help="Interactive live display with spinners")
+@click.option("--json-output", is_flag=True, help="Output results as JSON")
+@click.option("--no-sync-check", is_flag=True, help="Skip sync status check")
+def ensure(
+    flow_name: str | None,
+    parallel: int,
+    polling_interval: int,
+    max_timeout: int,
+    live: bool,
+    json_output: bool,
+    no_sync_check: bool,
+) -> None:
+    """Execute flow triggers and poll until completion.
+
+    Runs flows from trigger node to completion, polling evaluations until
+    the flow passes, fails, or times out. Supports parallel execution of
+    multiple flows with controlled concurrency.
+
+    The command will:
+    1. Find flows with trigger nodes
+    2. Validate trigger configuration
+    3. Execute HTTP requests or commands
+    4. Extract run_id from response
+    5. Poll flow evaluation until done
 
     Examples:
-        cli validate-nodes .business-use/checkout.yaml    # Validate single file
-        cli validate-nodes .business-use/                 # Validate all YAML files
+        business-use flow ensure                       # All flows
+        business-use flow ensure payment_approval      # Specific flow
+        business-use flow ensure --parallel 3          # Run 3 flows concurrently
+        business-use flow ensure --live                # Interactive display
+        business-use flow ensure --json-output         # JSON output for automation
+        business-use flow ensure --max-timeout 60000   # 60s timeout
+    """
+    import json
+    import time
+
+    from src.ensure import (
+        LiveDisplay,
+        StructuredLogger,
+        format_json_output,
+        get_flows_with_triggers,
+        run_flow_ensure,
+        run_flows_parallel,
+    )
+
+    ensure_database_or_exit()
+
+    async def run_ensure():
+        start_time = time.time()
+
+        # Initialize display
+        display = LiveDisplay() if live else StructuredLogger()
+
+        try:
+            # Find workspace
+            workspace = find_workspace()
+            if not workspace:
+                click.secho("✗ No workspace found!", fg="red", bold=True)
+                click.echo()
+                click.echo("Run 'business-use workspace init' to create .business-use/")
+                raise click.Abort()
+
+            if live:
+                display.show_header("Flow Ensure - Execute & Verify")
+                display.show_step("1/5", "Checking workspace...")
+                display.show_success(f"Workspace: {workspace}", indent=1)
+            else:
+                display.log_step("1/5", f"Workspace: {workspace}")
+
+            # Check sync status
+            if not no_sync_check:
+                if live:
+                    display.show_step("2/5", "Checking sync status...")
+                else:
+                    display.log_step("2/5", "Checking sync status")
+
+                from src.sync import check_sync_status
+
+                out_of_sync_files = await check_sync_status(workspace)
+                if out_of_sync_files:
+                    # Files are out of sync - abort and tell user to sync
+                    click.echo()
+                    click.secho(
+                        "⚠️  Flow definitions out of sync:", fg="yellow", bold=True
+                    )
+                    for file_name in out_of_sync_files:
+                        click.secho(f"  - {file_name}", fg="yellow")
+                    click.echo()
+                    click.echo("The YAML files differ from database nodes.")
+                    click.echo("Please run:")
+                    click.secho("  business-use nodes sync", fg="cyan")
+                    click.echo()
+                    raise click.Abort()
+                # Otherwise, files are in sync - continue
+
+            # Determine flows to run
+            if flow_name:
+                flows_to_run = [flow_name]
+                if live:
+                    display.show_step("3/5", f"Running flow: {flow_name}")
+                else:
+                    display.log_step("3/5", f"Running flow: {flow_name}")
+            else:
+                # Get all flows with triggers
+                all_trigger_flows = await get_flows_with_triggers()
+                if not all_trigger_flows:
+                    click.secho("✗ No flows with trigger nodes found", fg="red")
+                    click.echo()
+                    click.echo("Add a trigger node to a flow to use ensure command")
+                    raise click.Abort()
+
+                flows_to_run = all_trigger_flows
+                if live:
+                    display.show_step(
+                        "3/5", f"Found {len(flows_to_run)} flows with triggers"
+                    )
+                    for f in flows_to_run:
+                        display.show_info(f"  - {f}", indent=1)
+                else:
+                    display.log_step(
+                        "3/5",
+                        f"Found {len(flows_to_run)} flows with triggers: {', '.join(flows_to_run)}",
+                    )
+
+            # Run flows
+            if live:
+                display.show_step(
+                    "4/5", f"Executing triggers (concurrency: {parallel})..."
+                )
+            else:
+                display.log_step("4/5", f"Executing triggers (concurrency: {parallel})")
+
+            if len(flows_to_run) == 1:
+                # Single flow
+                flow_name_single = flows_to_run[0]
+                result = await run_flow_ensure(
+                    flow_name_single,
+                    polling_interval_ms=polling_interval,
+                    max_timeout_ms=max_timeout,
+                    display=display,
+                )
+                results = [result]
+            else:
+                # Multiple flows
+                results = await run_flows_parallel(
+                    flows=flows_to_run,
+                    concurrency=parallel,
+                    polling_interval_ms=polling_interval,
+                    max_timeout_ms=max_timeout,
+                    display=display,
+                )
+
+            # Show results
+            if live:
+                display.show_step("5/5", "Results")
+            else:
+                display.log_step("5/5", "Results")
+
+            total_elapsed = time.time() - start_time
+            passed_count = sum(1 for _, r in results if r.status == "passed")
+            failed_count = sum(
+                1 for _, r in results if r.status in ["failed", "error", "timed_out"]
+            )
+
+            # Display each flow result
+            for flow_name_result, output in results:
+                elapsed_s = output.elapsed_ns / 1_000_000_000
+                if live:
+                    display.show_progress(flow_name_result, output.status, elapsed_s)
+                else:
+                    display.log_progress(flow_name_result, output.status, elapsed_s)
+
+            # Output
+            if json_output:
+                json_result = format_json_output(results)
+                click.echo(json.dumps(json_result, indent=2))
+            else:
+                if live:
+                    display.show_summary(
+                        {
+                            "total": len(results),
+                            "passed": passed_count,
+                            "failed": failed_count,
+                            "elapsed": total_elapsed,
+                        }
+                    )
+                else:
+                    click.echo()
+                    click.secho("=" * 60, fg="cyan")
+                    click.secho("Summary", fg="cyan", bold=True)
+                    click.echo(f"  Flows: {len(results)}")
+                    if passed_count > 0:
+                        click.secho(f"  ✓ Passed: {passed_count}", fg="green")
+                    if failed_count > 0:
+                        click.secho(f"  ✗ Failed: {failed_count}", fg="red")
+                    click.echo(f"  Total time: {total_elapsed:.1f}s")
+                    click.secho("=" * 60, fg="cyan")
+
+            # Exit code
+            if failed_count > 0:
+                raise click.Abort()
+
+        except click.Abort:
+            raise
+        except Exception as e:
+            click.secho(f"✗ Error: {e}", fg="red", err=True)
+            log.exception("Ensure command failed")
+            raise click.Abort() from e
+
+    asyncio.run(run_ensure())
+
+
+@nodes.command()
+@click.argument("path", type=click.Path(exists=True, path_type=Path), required=False)
+def validate(path: Path | None) -> None:
+    """Validate YAML node definition file(s) without syncing to database.
+
+    If no path is provided, automatically finds workspace directory:
+    - ./.business-use/ (project-level, priority)
+    - ~/.business-use/ (global fallback)
+
+    Examples:
+        business-use nodes validate                        # Auto-find workspace
+        business-use nodes validate .business-use/checkout.yaml    # Validate single file
+        business-use nodes validate ./custom-flows/        # Validate custom directory
     """
     from src.loaders.yaml_loader import validate_yaml_file
+
+    # If no path provided, use workspace hierarchy
+    if path is None:
+        path = ensure_workspace_or_exit()
+        click.echo(f"Using workspace: {path}")
 
     try:
         # Collect all YAML files

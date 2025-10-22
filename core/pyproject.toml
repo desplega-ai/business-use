@@ -36,6 +36,7 @@ dependencies = [
     "uuid>=1.30",
     "httpx>=0.27.0",
     "pyyaml>=6.0.0",
+    "questionary>=2.1.0",
 ]
 
 [project.urls]

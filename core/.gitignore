@@ -1,8 +1,12 @@
 db.sqlite
 db.sqlite-*
 
-# Business-Use local configuration
+# Business-Use local configuration and secrets
 config.yaml
+.business-use/config.yaml
+.business-use/secrets.yaml
+.business-use/db.sqlite
+.business-use/*.db
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

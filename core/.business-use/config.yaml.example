@@ -1,0 +1,19 @@
+# Project Configuration Example
+# Copy this file to config.yaml and customize for your project
+
+# API key for Business-Use server authentication
+# Generate with: business-use init
+api_key: "your_api_key_here"
+
+# Path to SQLite database
+# Default: ./.business-use/db.sqlite (project-level)
+database_path: "./.business-use/db.sqlite"
+
+# Logging level: DEBUG, INFO, WARNING, ERROR
+log_level: "info"
+
+# Enable debug mode (verbose SQL queries, etc.)
+debug: false
+
+# Environment name (e.g., local, dev, staging, prod)
+env: "local"

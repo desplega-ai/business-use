@@ -61,6 +61,12 @@ class NodeCreateSchema(NodeBaseSchema):
     type: Literal["generic", "trigger", "hook"]
 
 
+class NodeYAMLCreateSchema(NodeBaseSchema):
+    flow: str
+    id: str
+    type: NodeType
+
+
 class NodeUpdateSchema(NodeBaseSchema):
     flow: str | None = None
 

@@ -19,6 +19,52 @@ class PythonEvaluator:
     Never raises exceptions - all errors are caught and logged.
     """
 
+    def eval_expr(self, script: str, variables: dict[str, Any]) -> Any:
+        """Evaluate a Python expression and return the result (any type).
+
+        This is a lower-level method that returns the raw result without
+        type checking. Use this when you need non-boolean returns (e.g., strings).
+
+        Args:
+            script: Python expression to evaluate
+            variables: Variables available in the expression (e.g., {"data": {...}, "input": {...}})
+
+        Returns:
+            Any: Result of evaluation (can be any type)
+
+        Raises:
+            Exception: If evaluation fails (caller should handle)
+
+        Example:
+            >>> evaluator = PythonEvaluator()
+            >>> evaluator.eval_expr("data['payment_id']", {"data": {"payment_id": "pmt_123"}})
+            "pmt_123"
+        """
+        # Example of allowed built-in imports
+        from random import randint, random
+
+        # Execute expression in restricted environment
+        result = eval(
+            script,
+            {
+                "__builtins__": {
+                    "str": str,
+                    "int": int,
+                    "float": float,
+                    "bool": bool,
+                    "len": len,
+                    "min": min,
+                    "max": max,
+                    "sum": sum,
+                    "randint": randint,
+                    "random": random,
+                }
+            },
+            variables,
+        )
+
+        return result
+
     def evaluate(self, expr: Expr, data: dict[str, Any], ctx: dict[str, Any]) -> bool:
         """Evaluate a Python expression against data and context.
 
@@ -45,13 +91,8 @@ class PythonEvaluator:
             return False
 
         try:
-            # Execute expression in restricted environment
-            # Only 'data' and 'ctx' are available as variables
-            result = eval(
-                expr.script,
-                {"__builtins__": {}},  # No built-in functions
-                {"data": data, "ctx": ctx},  # Only these variables
-            )
+            # Use eval_expr for the actual evaluation
+            result = self.eval_expr(expr.script, {"data": data, "ctx": ctx})
 
             # Ensure result is boolean
             if not isinstance(result, bool):

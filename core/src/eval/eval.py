@@ -81,7 +81,7 @@ async def eval_flow_run(
 
     # 4. Topological sort (domain layer)
     layers = topological_sort_layers(flow_graph["graph"])
-    logger.info(f"Graph has {len(layers)} layers")
+    logger.info(f"Graph has {len(layers)} layers and {len(events)} raw events")
 
     # 5. Match events to layers (domain + execution layers)
     evaluator = PythonEvaluator()
@@ -90,6 +90,10 @@ async def eval_flow_run(
         layers=layers,
         nodes_map=flow_graph["nodes"],
         evaluator=evaluator,
+    )
+
+    logger.info(
+        f"Matched {len(matched['events'])} events for {len(matched['layers'])} layers"
     )
 
     # 6. Validate flow execution (domain layer)

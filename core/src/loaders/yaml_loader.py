@@ -9,8 +9,8 @@ from typing import Any
 
 import yaml
 
-from src.api.models import NodeCreateSchema
-from src.models import Expr, NodeCondition
+from src.api.models import NodeYAMLCreateSchema as NodeCreateSchema
+from src.models import ActionInput, ActionInputParams, Expr, NodeCondition
 
 
 class YAMLNodeDefinition:
@@ -34,6 +34,37 @@ class YAMLNodeDefinition:
         conditions_data = self.node_data.get("conditions", [])
         conditions_obj = [NodeCondition(**cond) for cond in conditions_data]
 
+        # Parse handler_input if present
+        handler_input_data = self.node_data.get("handler_input")
+        handler_input_obj = None
+        if handler_input_data:
+            # Parse params if present
+            params_data = handler_input_data.get("params")
+            params_obj = None
+            if params_data:
+                # Parse run_id_extractor if present in params
+                run_id_extractor_data = params_data.get("run_id_extractor")
+                run_id_extractor_obj = (
+                    Expr(**run_id_extractor_data) if run_id_extractor_data else None
+                )
+
+                params_obj = ActionInputParams(
+                    url=params_data.get("url"),
+                    method=params_data.get("method"),
+                    headers=params_data.get("headers"),
+                    body=params_data.get("body"),
+                    timeout_ms=params_data.get("timeout_ms"),
+                    test_run_id=params_data.get("test_run_id"),
+                    test_suite_run_id=params_data.get("test_suite_run_id"),
+                    command=params_data.get("command"),
+                    run_id_extractor=run_id_extractor_obj,
+                )
+
+            handler_input_obj = ActionInput(
+                input_schema=handler_input_data.get("input_schema"),
+                params=params_obj,
+            )
+
         return NodeCreateSchema(
             flow=self.flow,
             id=self.node_data["id"],
@@ -44,7 +75,7 @@ class YAMLNodeDefinition:
             validator=validator_obj,
             conditions=conditions_obj if conditions_obj else None,
             handler=self.node_data.get("handler"),
-            handler_input=self.node_data.get("handler_input"),
+            handler_input=handler_input_obj,
             additional_meta=self.node_data.get("additional_meta"),
         )
 

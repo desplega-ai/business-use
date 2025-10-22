@@ -210,14 +210,128 @@ def validate_flow_execution(
                 if matched["events"][ev_id].node_id == node_id
             ]
 
-            # If no events for this node, mark as skipped
+            # If no events for this node, determine status based on node type, conditions, and timing
             if not current_node_events:
+                # Find the most recent upstream dependency event timestamp
+                upstream_event_ts: int | None = None
+                if current_node.dep_ids:
+                    # Search all previous layers for the most recent dependency event
+                    for prev_layer_index in range(layer_index):
+                        prev_layer_event_ids = matched["layers"][prev_layer_index]
+                        for prev_event_id in prev_layer_event_ids:
+                            prev_event = matched["events"][prev_event_id]
+                            if prev_event.node_id in current_node.dep_ids:
+                                # Track the most recent (highest timestamp)
+                                if (
+                                    upstream_event_ts is None
+                                    or prev_event.ts > upstream_event_ts
+                                ):
+                                    upstream_event_ts = prev_event.ts
+
+                # Check if this node should fail/wait based on timing
+                node_status = "skipped"
+                node_message = "No events for this node"
+                should_mark_overall_failed = False
+
+                # Act nodes with conditions (especially timeout)
+                if current_node.type == "act" and current_node.conditions:
+                    # Find timeout_ms if present, default to 10 seconds
+                    timeout_ms = None
+                    for condition in current_node.conditions:
+                        if condition.timeout_ms:
+                            timeout_ms = condition.timeout_ms
+                            break
+
+                    # Default timeout: 10 seconds if not specified
+                    if timeout_ms is None:
+                        timeout_ms = 10000
+
+                    if upstream_event_ts is not None:
+                        # Calculate elapsed time since upstream event
+                        current_time_ns = time_ns()
+                        elapsed_ns = current_time_ns - upstream_event_ts
+                        elapsed_ms = elapsed_ns / 1_000_000
+
+                        if elapsed_ms < timeout_ms:
+                            # Still within timeout window - keep waiting
+                            node_status = "running"
+                            remaining_ms = timeout_ms - elapsed_ms
+                            node_message = f"Waiting for event ({elapsed_ms:.0f}ms / {timeout_ms}ms elapsed, {remaining_ms:.0f}ms remaining)"
+                        else:
+                            # Timeout expired - fail
+                            node_status = "failed"
+                            node_message = (
+                                f"Timeout: No event received within {timeout_ms}ms"
+                            )
+                            should_mark_overall_failed = True
+                    else:
+                        # No upstream event - can't determine if timeout expired
+                        if upstream_event_ts is None:
+                            # No upstream event yet - skip (dependency hasn't completed)
+                            node_status = "skipped"
+                            node_message = "Waiting for upstream dependency"
+                        else:
+                            # Has upstream but something went wrong
+                            node_status = "failed"
+                            node_message = (
+                                "No event received for act node with conditions"
+                            )
+                            should_mark_overall_failed = True
+
+                # Assert nodes always should fail when missing (they have validators)
+                elif current_node.type == "assert":
+                    # Check if we have a timeout from conditions, default to 10 seconds
+                    timeout_ms = None
+                    if current_node.conditions:
+                        for condition in current_node.conditions:
+                            if condition.timeout_ms:
+                                timeout_ms = condition.timeout_ms
+                                break
+
+                    # Default timeout: 10 seconds if not specified
+                    if timeout_ms is None:
+                        timeout_ms = 10000
+
+                    if upstream_event_ts is not None:
+                        # Calculate elapsed time since upstream event
+                        current_time_ns = time_ns()
+                        elapsed_ns = current_time_ns - upstream_event_ts
+                        elapsed_ms = elapsed_ns / 1_000_000
+
+                        if elapsed_ms < timeout_ms:
+                            # Still within timeout window
+                            node_status = "running"
+                            remaining_ms = timeout_ms - elapsed_ms
+                            node_message = f"Waiting for event ({elapsed_ms:.0f}ms / {timeout_ms}ms elapsed, {remaining_ms:.0f}ms remaining)"
+                        else:
+                            # Timeout expired
+                            node_status = "failed"
+                            node_message = (
+                                f"Timeout: No event received within {timeout_ms}ms"
+                            )
+                            should_mark_overall_failed = True
+                    else:
+                        # No timeout or no upstream event
+                        if upstream_event_ts is None:
+                            # No upstream event yet - skip (dependency hasn't completed)
+                            node_status = "skipped"
+                            node_message = "Waiting for upstream dependency"
+                        else:
+                            # Has upstream but no timeout - fail
+                            node_status = "failed"
+                            node_message = "No event received for assert node"
+                            should_mark_overall_failed = True
+
+                # Mark overall status as failed only if actually failed (not running)
+                if should_mark_overall_failed:
+                    overall_status = "failed"
+
                 items.append(
                     ValidationItem(
                         node_id=node_id,
                         dep_node_ids=current_node.dep_ids or [],
-                        message="No events for this node",
-                        status="skipped",
+                        message=node_message,
+                        status=node_status,  # type: ignore
                         elapsed_ns=time_ns() - item_start,
                         ev_ids=[],
                         upstream_ev_ids=[],
@@ -328,7 +442,12 @@ def validate_flow_execution(
 
     # Determine overall status
     if overall_status != "failed":
-        overall_status = "passed"
+        # Check if any nodes are still running
+        has_running = any(item["status"] == "running" for item in items)
+        if has_running:
+            overall_status = "running"
+        else:
+            overall_status = "passed"
 
     return ValidationResult(
         status=overall_status,  # type: ignore
