@@ -342,6 +342,44 @@ export class BatchProcessor {
         // Remove trailing semicolon
         body = body.replace(/;$/, '');
 
+        // Smart removal of trailing syntax (comma, parenthesis) that are part of function call
+        // Track nesting level to avoid removing syntax that's part of the expression
+        let nestingLevel = 0;
+        let lastSignificantChar = body.length - 1;
+
+        // Walk backwards through the body
+        for (let i = body.length - 1; i >= 0; i--) {
+          const char = body[i];
+
+          // Track closing delimiters (increase nesting when going backwards)
+          if (')]}}>'.includes(char)) {
+            nestingLevel++;
+          } else if ('([{<'.includes(char)) {
+            nestingLevel--;
+          }
+
+          // If we're at nesting level 0 and hit a comma, that's likely the end
+          // of the lambda argument in the function call
+          if (nestingLevel === 0 && char === ',') {
+            lastSignificantChar = i - 1;
+            break;
+          }
+
+          // If nesting level goes negative, we've gone too far
+          if (nestingLevel < 0) {
+            lastSignificantChar = i - 1;
+            break;
+          }
+        }
+
+        // Extract the actual body
+        body = body.substring(0, lastSignificantChar + 1).trim();
+
+        // Final cleanup: remove trailing syntax characters that aren't part of the expression
+        while (body.length > 0 && ',);'.includes(body[body.length - 1])) {
+          body = body.substring(0, body.length - 1).trim();
+        }
+
         return { engine: 'js', script: body };
       }
 

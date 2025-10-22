@@ -42,6 +42,40 @@ class TestLambdaSerialization:
         assert result.engine == "python"
         assert result.script == "True"
 
+    def test_multiline_lambda(self):
+        """Test lambda that spans multiple lines."""
+        processor = self._create_mock_processor()
+
+        # This mimics a lambda defined across multiple lines in a function call
+        lambda_fn = (
+            lambda data, ctx: not data["is_first_run"] or data["allow_fix"] is True
+        )
+        result = processor._serialize_lambda(lambda_fn)
+
+        assert result.engine == "python"
+        # Should include both parts of the expression
+        assert 'not data["is_first_run"]' in result.script
+        assert 'data["allow_fix"]' in result.script
+        assert " or " in result.script
+        # Should not have trailing comma
+        assert not result.script.endswith(",")
+
+    def test_multiline_lambda_complex(self):
+        """Test complex lambda with multiple conditions."""
+        processor = self._create_mock_processor()
+
+        lambda_fn = lambda data, ctx: (
+            data["status"] == "active" and data["amount"] > 0 or data["bypass"] is True
+        )
+        result = processor._serialize_lambda(lambda_fn)
+
+        assert result.engine == "python"
+        assert 'data["status"]' in result.script
+        assert 'data["amount"]' in result.script
+        assert 'data["bypass"]' in result.script
+        assert " and " in result.script
+        assert " or " in result.script
+
     def test_simple_function_with_return(self):
         """Test function with simple return statement."""
         processor = self._create_mock_processor()
@@ -106,6 +140,56 @@ class TestLambdaSerialization:
         assert 'data["total"]' in result.script
         # Should not include docstring
         assert "Complex validation" not in result.script
+
+    def test_multiline_function_with_multiple_statements(self):
+        """Test function with multiple lines and final return."""
+        processor = self._create_mock_processor()
+
+        def validate_order(data, ctx):
+            """Validate order with complex logic."""
+            # Calculate totals
+            subtotal = sum(item["price"] * item["quantity"] for item in data["items"])
+            tax = subtotal * 0.1
+            shipping = 10 if subtotal < 100 else 0
+            total = subtotal + tax + shipping
+            # Final validation
+            return abs(data["total"] - total) < 0.01
+
+        result = processor._serialize_lambda(validate_order)
+
+        assert result.engine == "python"
+        # Should include all calculation lines
+        assert "subtotal = " in result.script
+        assert "tax = " in result.script
+        assert "shipping = " in result.script
+        assert "total = " in result.script
+        # Should include the return statement
+        assert "return" in result.script
+        assert "abs(" in result.script
+        # Should not include docstring or comments
+        assert "Validate order" not in result.script
+        assert "Calculate totals" not in result.script
+        assert "Final validation" not in result.script
+
+    def test_multiline_function_with_conditionals(self):
+        """Test function with if/else statements."""
+        processor = self._create_mock_processor()
+
+        def validate_with_conditions(data, ctx):
+            if data["type"] == "premium":
+                min_amount = 100
+            else:
+                min_amount = 50
+            return data["amount"] >= min_amount
+
+        result = processor._serialize_lambda(validate_with_conditions)
+
+        assert result.engine == "python"
+        assert 'if data["type"]' in result.script
+        assert "min_amount = 100" in result.script
+        assert "else:" in result.script
+        assert "min_amount = 50" in result.script
+        assert "return" in result.script
 
     def test_function_with_comments(self):
         """Test that comments are stripped."""

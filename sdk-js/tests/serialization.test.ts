@@ -28,6 +28,36 @@ function serializeFunction(fn: Function): { engine: string; script: string } {
     // Remove trailing semicolon
     body = body.replace(/;$/, '');
 
+    // Smart removal of trailing syntax (comma, parenthesis) that are part of function call
+    let nestingLevel = 0;
+    let lastSignificantChar = body.length - 1;
+
+    for (let i = body.length - 1; i >= 0; i--) {
+      const char = body[i];
+
+      if (')]}}>'.includes(char)) {
+        nestingLevel++;
+      } else if ('([{<'.includes(char)) {
+        nestingLevel--;
+      }
+
+      if (nestingLevel === 0 && char === ',') {
+        lastSignificantChar = i - 1;
+        break;
+      }
+
+      if (nestingLevel < 0) {
+        lastSignificantChar = i - 1;
+        break;
+      }
+    }
+
+    body = body.substring(0, lastSignificantChar + 1).trim();
+
+    while (body.length > 0 && ',);'.includes(body[body.length - 1])) {
+      body = body.substring(0, body.length - 1).trim();
+    }
+
     return { engine: 'js', script: body };
   }
 
@@ -103,5 +133,46 @@ describe('Function Serialization', () => {
     expect(result.engine).toBe('js');
     expect(result.script).toContain('data.items.reduce');
     expect(result.script).toContain('total === data.total');
+  });
+
+  it('should serialize multi-line arrow function with logical OR', () => {
+    const fn = (data: any, ctx: any) =>
+      !data.isFirstRun || data.allowFix === true;
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    expect(result.script).toContain('!data.isFirstRun');
+    expect(result.script).toContain('data.allowFix');
+    expect(result.script).toContain('||');
+    expect(result.script).not.toMatch(/,\s*$/); // Should not end with comma
+  });
+
+  it('should serialize complex multi-line arrow function', () => {
+    const fn = (data: any, ctx: any) =>
+      data.status === 'active' &&
+      data.amount > 0 ||
+      data.bypass === true;
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    expect(result.script).toContain('data.status');
+    expect(result.script).toContain('data.amount');
+    expect(result.script).toContain('data.bypass');
+    expect(result.script).toContain('&&');
+    expect(result.script).toContain('||');
+  });
+
+  it('should serialize multi-line arrow function with parentheses', () => {
+    const fn = (data: any, ctx: any) => (
+      data.status === 'active' &&
+      data.amount > 0 ||
+      data.bypass === true
+    );
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    expect(result.script).toContain('data.status');
+    expect(result.script).toContain('data.amount');
+    expect(result.script).toContain('data.bypass');
   });
 });

@@ -248,17 +248,64 @@ class BatchProcessor:
             Expr object with Python engine and extracted body
         """
         try:
-            source = inspect.getsource(fn).strip()
+            # Try to get full source including multi-line lambdas
+            try:
+                source_lines, _ = inspect.getsourcelines(fn)
+                source = "".join(source_lines)
+            except (OSError, TypeError):
+                # Fallback to getsource for simple cases
+                source = inspect.getsource(fn)
+
+            source = source.strip()
 
             # Handle lambda expressions
             if "lambda" in source:
                 # Extract the expression after the colon
                 # e.g., "lambda data, ctx: data['amount'] > 0" -> "data['amount'] > 0"
                 if ":" in source:
-                    # Get everything after the last colon (the lambda body)
-                    body = source.split(":", 1)[1].strip()
-                    # Remove trailing comma or parenthesis if present
-                    body = body.rstrip(",).;")
+                    # Get everything after the colon (the lambda body)
+                    colon_index = source.index(":")
+                    body = source[colon_index + 1 :].strip()
+
+                    # Remove trailing comma, parenthesis, etc. that are part of the function call
+                    # We need to be smart about this - only remove trailing syntax, not part of the expression
+                    # Walk backwards to find where the lambda body actually ends
+
+                    # First, remove any trailing whitespace
+                    body = body.rstrip()
+
+                    # Track nesting level (parentheses, brackets, braces)
+                    nesting_level = 0
+                    last_significant_char = len(body) - 1
+
+                    # Walk backwards through the body
+                    for i in range(len(body) - 1, -1, -1):
+                        char = body[i]
+
+                        # Track closing delimiters (increase nesting when going backwards)
+                        if char in ")]}>":
+                            nesting_level += 1
+                        elif char in "([{<":
+                            nesting_level -= 1
+
+                        # If we're at nesting level 0 and hit a comma, that's likely the end
+                        # of the lambda argument in the function call
+                        if nesting_level == 0 and char == ",":
+                            last_significant_char = i - 1
+                            break
+
+                        # If nesting level goes negative, we've gone too far
+                        if nesting_level < 0:
+                            last_significant_char = i - 1
+                            break
+
+                    # Extract the actual lambda body
+                    body = body[: last_significant_char + 1].strip()
+
+                    # Final cleanup: remove trailing syntax characters that aren't part of the expression
+                    while body and body[-1] in ",);":
+                        body = body[:-1].strip()
+
                     return Expr(engine="python", script=body)
                 # Fallback if no colon found in lambda
                 return Expr(engine="python", script=source)
