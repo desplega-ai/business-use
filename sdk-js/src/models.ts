@@ -87,8 +87,8 @@ export interface QueuedEvent {
   data: Record<string, any>;
   description?: string;
   dep_ids?: string[] | (() => string[]);
-  filter?: boolean | ((data: Record<string, any>, ctx: Ctx) => boolean);
-  validator?: (data: Record<string, any>, ctx: Ctx) => boolean;
+  filter?: boolean | ((_data: Record<string, any>, _ctx: Ctx) => boolean);
+  validator?: (_data: Record<string, any>, _ctx: Ctx) => boolean;
   conditions?: NodeCondition[] | (() => NodeCondition[]);
   additional_meta?: Record<string, any>;
 }

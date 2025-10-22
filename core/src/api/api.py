@@ -1,4 +1,5 @@
 import logging
+import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, TypedDict
@@ -28,6 +29,14 @@ from src.models import (
 )
 from src.utils.time import now
 
+# Suppress Pydantic serialization warnings for dict-stored JSON fields
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    module="pydantic.main",
+    message=".*Pydantic serializer warnings.*",
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -41,10 +50,10 @@ router = APIRouter(
 )
 
 
-@router.get("/check")
-async def check(_: Annotated[None, Depends(ensure_api_key)]):
+@router.get("/status")
+async def status(_: Annotated[None, Depends(ensure_api_key)]):
     return SuccessResponse(
-        message="lgtm",
+        message="ok",
     )
 
 
@@ -352,6 +361,7 @@ origins = [
     "http://localhost:3007",
     "http://localhost:13370",
     "http://localhost:5174",
+    "https://business-use.vercel.app",
 ]
 
 

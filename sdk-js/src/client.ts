@@ -193,9 +193,9 @@ export function ensure<TData extends Record<string, any> = Record<string, any>>(
   flow: string;
   runId: string | (() => string);
   data: TData;
-  filter?: boolean | ((data: TData, ctx: Ctx) => boolean);
+  filter?: boolean | ((_data: TData, _ctx: Ctx) => boolean);
   depIds?: string[] | (() => string[]);
-  validator?: (data: TData, ctx: Ctx) => boolean;
+  validator?: (_data: TData, _ctx: Ctx) => boolean;
   description?: string;
   conditions?: NodeCondition[] | (() => NodeCondition[]);
   additional_meta?: Record<string, any>;
@@ -253,7 +253,7 @@ export function act<TData extends Record<string, any> = Record<string, any>>(opt
   runId: string | (() => string);
   data: TData;
   depIds?: string[] | (() => string[]);
-  filter?: (data: TData, ctx: Ctx) => boolean;
+  filter?: (_data: TData, _ctx: Ctx) => boolean;
   timeoutMs?: number;
 }): void {
   ensure(options);
@@ -268,9 +268,9 @@ export function assert<TData extends Record<string, any> = Record<string, any>>(
   flow: string;
   runId: string | (() => string);
   data: TData;
-  validator?: (data: TData, ctx: Ctx) => boolean;
+  validator?: (_data: TData, _ctx: Ctx) => boolean;
   depIds?: string[] | (() => string[]);
-  filter?: (data: TData, ctx: Ctx) => boolean;
+  filter?: (_data: TData, _ctx: Ctx) => boolean;
   timeoutMs?: number;
 }): void {
   ensure(options);
@@ -285,10 +285,10 @@ function _enqueueEvent<TData extends Record<string, any>>(options: {
   flow: string;
   runId: string | (() => string);
   data: TData;
-  filter?: boolean | ((data: TData, ctx: Ctx) => boolean);
+  filter?: boolean | ((_data: TData, _ctx: Ctx) => boolean);
   depIds?: string[] | (() => string[]);
   description?: string;
-  validator?: (data: TData, ctx: Ctx) => boolean;
+  validator?: (_data: TData, _ctx: Ctx) => boolean;
   conditions?: NodeCondition[] | (() => NodeCondition[]);
   additional_meta?: Record<string, any>;
 }): void {
@@ -342,11 +342,11 @@ function _enqueueEvent<TData extends Record<string, any>>(options: {
       flow: options.flow,
       run_id: options.runId,
       data: options.data,
-      filter: options.filter as boolean | ((data: Record<string, any>) => boolean) | undefined,
+      filter: options.filter as boolean | ((_data: Record<string, any>) => boolean) | undefined,
       dep_ids: options.depIds,
       description: options.description,
       validator: options.validator as
-        | ((data: Record<string, any>, ctx: Record<string, any>) => boolean)
+        | ((_data: Record<string, any>, _ctx: Record<string, any>) => boolean)
         | undefined,
       conditions: options.conditions,
       additional_meta: options.additional_meta,

@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import secrets
+import warnings
 from pathlib import Path
 
 import click
@@ -15,6 +16,14 @@ log = logging.getLogger(__name__)
 
 
 configure_logging()
+
+# Suppress Pydantic serialization warnings for dict-stored JSON fields
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    module="pydantic.main",
+    message=".*Pydantic serializer warnings.*",
+)
 
 
 def get_alembic_config() -> AlembicConfig:
