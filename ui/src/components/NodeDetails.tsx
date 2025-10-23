@@ -95,9 +95,19 @@ export function NodeDetails({ node, onEvalInfoChange, onNodeSelect, allNodes }: 
     setEventsPage(0);
     setRunsPage(0);
     setExpandedEventId(null);
-    setExpandedRunId(null);
-    handleClearEval();
-  }, [node, handleClearEval]);
+  }, [node]);
+
+  // Auto-fetch latest eval and display it when evalOutputs loads
+  useEffect(() => {
+    if (evalOutputs && evalOutputs.length > 0 && node) {
+      const latestRun = evalOutputs[0];
+      // Auto-view the latest evaluation
+      onEvalInfoChange?.(latestRun.output.exec_info);
+      setViewedEvalId(latestRun.id);
+      // Auto-expand the latest run
+      setExpandedRunId(latestRun.id);
+    }
+  }, [evalOutputs, node, onEvalInfoChange]);
 
   if (!node) {
     return (
@@ -161,12 +171,57 @@ export function NodeDetails({ node, onEvalInfoChange, onNodeSelect, allNodes }: 
                 <div>
                   <h3 className="text-sm font-medium text-gray-500">Dependencies</h3>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {node.dep_ids.map((depId) => (
-                      <span key={depId} className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
-                        {depId}
-                      </span>
+                    {node.dep_ids.map((depId) => {
+                      const depNode = allNodes?.find((n) => n.id === depId);
+                      return (
+                        <button
+                          key={depId}
+                          onClick={() => {
+                            if (depNode && onNodeSelect) {
+                              onNodeSelect(depNode);
+                            }
+                          }}
+                          className={`px-2 py-1 rounded text-xs font-mono transition-all ${
+                            depNode
+                              ? "bg-purple-100 hover:bg-purple-200 cursor-pointer border border-purple-300"
+                              : "bg-gray-100 cursor-default"
+                          }`}
+                          disabled={!depNode}
+                        >
+                          {depId}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {node.conditions && node.conditions.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500">Conditions</h3>
+                  <div className="mt-2 space-y-1">
+                    {node.conditions.map((condition, idx) => (
+                      <div key={idx} className="text-xs bg-gray-50 p-2 rounded">
+                        {condition.timeout_ms && (
+                          <span>
+                            Timeout: <span className="font-mono">{condition.timeout_ms}ms</span>
+                          </span>
+                        )}
+                      </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              <div>
+                <h3 className="text-sm font-medium text-gray-500">Created At</h3>
+                <p className="mt-1 text-sm">{new Date(node.created_at).toLocaleString()}</p>
+              </div>
+
+              {node.updated_at && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500">Updated At</h3>
+                  <p className="mt-1 text-sm">{new Date(node.updated_at).toLocaleString()}</p>
                 </div>
               )}
 
@@ -211,44 +266,62 @@ export function NodeDetails({ node, onEvalInfoChange, onNodeSelect, allNodes }: 
                       <TableRow>
                         <TableHead>Event ID</TableHead>
                         <TableHead>Run ID</TableHead>
+                        <TableHead>Type</TableHead>
                         <TableHead>Timestamp</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {events.map((event) => (
-                        <TableRow
-                          key={event.id}
-                          className="cursor-pointer hover:bg-gray-50"
-                          onClick={() =>
-                            setExpandedEventId(expandedEventId === event.id ? null : event.id)
-                          }
-                        >
-                          <TableCell className="font-mono text-xs">
-                            {event.id.substring(0, 8)}...
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {event.run_id.substring(0, 8)}...
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {new Date(event.ts / 1_000_000).toLocaleString()}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEvaluate(event);
-                              }}
-                              disabled={runEval.isPending}
-                            >
-                              <PlayIcon className="h-3 w-3 mr-1" />
-                              Eval
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {events.map((event) => {
+                        // Find how many eval runs used this event
+                        const usedInRuns =
+                          evalOutputs?.filter((output) => output.output.ev_ids.includes(event.id))
+                            .length || 0;
+
+                        return (
+                          <TableRow
+                            key={event.id}
+                            className="cursor-pointer hover:bg-gray-50"
+                            onClick={() =>
+                              setExpandedEventId(expandedEventId === event.id ? null : event.id)
+                            }
+                          >
+                            <TableCell className="font-mono text-xs">
+                              {event.id.substring(0, 8)}...
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {event.run_id.substring(0, 8)}...
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary" className="text-xs">
+                                {event.type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {new Date(event.ts / 1_000_000).toLocaleString()}
+                              {usedInRuns > 0 && (
+                                <div className="text-xs text-purple-600 mt-1">
+                                  Used in {usedInRuns} run{usedInRuns > 1 ? "s" : ""}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEvaluate(event);
+                                }}
+                                disabled={runEval.isPending}
+                              >
+                                <PlayIcon className="h-3 w-3 mr-1" />
+                                Eval
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
 
@@ -366,56 +439,153 @@ export function NodeDetails({ node, onEvalInfoChange, onNodeSelect, allNodes }: 
                           {expandedRunId === output.id && (
                             <TableRow key={`${output.id}-details`}>
                               <TableCell colSpan={4} className="bg-gray-50">
-                                <div className="py-2 space-y-2">
-                                  <div className="text-xs text-gray-500">
-                                    {new Date(output.created_at).toLocaleString()}
+                                <div className="py-2 space-y-4">
+                                  <div className="grid grid-cols-2 gap-4 text-xs">
+                                    <div>
+                                      <span className="font-medium text-gray-500">Created: </span>
+                                      {new Date(output.created_at).toLocaleString()}
+                                    </div>
+                                    <div>
+                                      <span className="font-medium text-gray-500">
+                                        Total Events:{" "}
+                                      </span>
+                                      {output.output.ev_ids.length}
+                                    </div>
                                   </div>
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead className="text-xs">Node</TableHead>
-                                        <TableHead className="text-xs">Status</TableHead>
-                                        <TableHead className="text-right text-xs">
-                                          Time (ms)
-                                        </TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
+
+                                  <div>
+                                    <h4 className="text-sm font-medium mb-2">
+                                      Node Execution Details
+                                    </h4>
+                                    <div className="space-y-3">
                                       {output.output.exec_info.map((info, idx) => {
                                         const nodeForInfo = allNodes?.find(
                                           (n) => n.id === info.node_id
                                         );
+                                        const isNodeSelected = nodeForInfo?.id === node?.id;
                                         return (
-                                          <TableRow
+                                          <Card
                                             key={idx}
-                                            className={
-                                              nodeForInfo && onNodeSelect
-                                                ? "cursor-pointer hover:bg-gray-100"
+                                            className={`${
+                                              isNodeSelected
+                                                ? "ring-2 ring-purple-400 shadow-md shadow-purple-200"
                                                 : ""
-                                            }
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              if (nodeForInfo && onNodeSelect) {
-                                                onNodeSelect(nodeForInfo);
-                                              }
-                                            }}
+                                            }`}
                                           >
-                                            <TableCell className="font-mono text-xs">
-                                              {info.node_id}
-                                            </TableCell>
-                                            <TableCell>
-                                              <Badge variant={getStatusVariant(info.status)}>
-                                                {info.status}
-                                              </Badge>
-                                            </TableCell>
-                                            <TableCell className="text-right text-xs">
-                                              {(info.elapsed_ns / 1_000_000).toFixed(2)}
-                                            </TableCell>
-                                          </TableRow>
+                                            <CardContent className="p-3 space-y-2">
+                                              <div className="flex items-start justify-between">
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (nodeForInfo && onNodeSelect) {
+                                                      onNodeSelect(nodeForInfo);
+                                                    }
+                                                  }}
+                                                  className={`font-mono text-xs font-medium ${
+                                                    nodeForInfo && onNodeSelect
+                                                      ? "text-purple-600 hover:text-purple-800 cursor-pointer"
+                                                      : "text-gray-900"
+                                                  }`}
+                                                  disabled={!nodeForInfo || !onNodeSelect}
+                                                >
+                                                  {info.node_id}
+                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                  <Badge variant={getStatusVariant(info.status)}>
+                                                    {info.status}
+                                                  </Badge>
+                                                  <span className="text-xs text-gray-500">
+                                                    {(info.elapsed_ns / 1_000_000).toFixed(2)}ms
+                                                  </span>
+                                                </div>
+                                              </div>
+
+                                              {info.dep_node_ids.length > 0 && (
+                                                <div className="text-xs">
+                                                  <span className="text-gray-500">
+                                                    Dependencies:{" "}
+                                                  </span>
+                                                  <span className="font-mono">
+                                                    {info.dep_node_ids.join(", ")}
+                                                  </span>
+                                                </div>
+                                              )}
+
+                                              {info.message && (
+                                                <div className="text-xs bg-blue-50 p-2 rounded">
+                                                  <span className="font-medium text-blue-700">
+                                                    Message:{" "}
+                                                  </span>
+                                                  {info.message}
+                                                </div>
+                                              )}
+
+                                              {info.error && (
+                                                <div className="text-xs bg-red-50 p-2 rounded">
+                                                  <span className="font-medium text-red-700">
+                                                    Error:{" "}
+                                                  </span>
+                                                  <pre className="mt-1 whitespace-pre-wrap">
+                                                    {info.error}
+                                                  </pre>
+                                                </div>
+                                              )}
+
+                                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                                <div>
+                                                  <span className="text-gray-500">Events: </span>
+                                                  <Badge variant="secondary" className="ml-1">
+                                                    {info.ev_ids.length}
+                                                  </Badge>
+                                                  {info.ev_ids.length > 0 && (
+                                                    <div className="mt-1 font-mono text-xs text-gray-600">
+                                                      {info.ev_ids
+                                                        .slice(0, 2)
+                                                        .map((id) => id.substring(0, 8))
+                                                        .join(", ")}
+                                                      {info.ev_ids.length > 2 &&
+                                                        ` +${info.ev_ids.length - 2} more`}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                                <div>
+                                                  <span className="text-gray-500">
+                                                    Upstream Events:{" "}
+                                                  </span>
+                                                  <Badge variant="secondary" className="ml-1">
+                                                    {info.upstream_ev_ids.length}
+                                                  </Badge>
+                                                  {info.upstream_ev_ids.length > 0 && (
+                                                    <div className="mt-1 font-mono text-xs text-gray-600">
+                                                      {info.upstream_ev_ids
+                                                        .slice(0, 2)
+                                                        .map((id) => id.substring(0, 8))
+                                                        .join(", ")}
+                                                      {info.upstream_ev_ids.length > 2 &&
+                                                        ` +${info.upstream_ev_ids.length - 2} more`}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </CardContent>
+                                          </Card>
                                         );
                                       })}
-                                    </TableBody>
-                                  </Table>
+                                    </div>
+                                  </div>
+
+                                  {Object.keys(output.output.graph).length > 0 && (
+                                    <div>
+                                      <h4 className="text-sm font-medium mb-2">Graph Structure</h4>
+                                      <Card>
+                                        <CardContent className="p-3">
+                                          <pre className="text-xs overflow-auto max-h-40">
+                                            {JSON.stringify(output.output.graph, null, 2)}
+                                          </pre>
+                                        </CardContent>
+                                      </Card>
+                                    </div>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>

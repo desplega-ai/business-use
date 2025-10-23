@@ -1,6 +1,11 @@
-def main() -> None:
-    print("Hello from core!")
+"""
+Main entry point for Vercel deployment.
 
+This file exports the FastAPI app instance for Vercel's automatic deployment.
+Vercel looks for an 'app' variable in files like main.py, app.py, or index.py.
+"""
 
-if __name__ == "__main__":
-    main()
+from src.api.api import app
+
+# Export the app for Vercel
+__all__ = ["app"]

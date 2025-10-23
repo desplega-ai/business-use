@@ -314,9 +314,46 @@ export class BatchProcessor {
 
       // Handle arrow functions
       if (source.includes('=>')) {
-        // Extract the expression after the arrow
+        // Find the arrow operator, being careful to skip strings
         // e.g., "(data, ctx) => data.amount > 0" -> "data.amount > 0"
-        const arrowIndex = source.indexOf('=>');
+        let arrowIndex = -1;
+        let inString = false;
+        let stringChar: string | null = null;
+
+        for (let i = 0; i < source.length - 1; i++) {
+          const char = source[i];
+          const nextChar = source[i + 1];
+
+          // Track string literals
+          if (
+            (char === '"' || char === "'" || char === '`') &&
+            (i === 0 || source[i - 1] !== '\\')
+          ) {
+            if (!inString) {
+              inString = true;
+              stringChar = char;
+            } else if (char === stringChar) {
+              inString = false;
+              stringChar = null;
+            }
+            continue;
+          }
+
+          if (inString) {
+            continue;
+          }
+
+          // Look for '=>'
+          if (char === '=' && nextChar === '>') {
+            arrowIndex = i;
+            break;
+          }
+        }
+
+        if (arrowIndex === -1) {
+          return { engine: 'js', script: source };
+        }
+
         let body = source.substring(arrowIndex + 2).trim();
 
         // Remove wrapping braces if present: { return x } -> return x
@@ -336,10 +373,27 @@ export class BatchProcessor {
         // Track nesting level to avoid removing syntax that's part of the expression
         let nestingLevel = 0;
         let lastSignificantChar = body.length - 1;
+        inString = false;
+        stringChar = null;
 
         // Walk backwards through the body
         for (let i = body.length - 1; i >= 0; i--) {
           const char = body[i];
+
+          // Track string literals (going backwards)
+          if ((char === '"' || char === "'" || char === '`') && (i === 0 || body[i - 1] !== '\\')) {
+            if (!inString) {
+              inString = true;
+              stringChar = char;
+            } else if (char === stringChar) {
+              inString = false;
+              stringChar = null;
+            }
+          }
+
+          if (inString) {
+            continue;
+          }
 
           // Track closing delimiters (increase nesting when going backwards)
           if (char && ')]}}>'.includes(char)) {

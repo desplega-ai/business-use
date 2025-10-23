@@ -3,7 +3,8 @@ from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, DateTime
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlmodel import BIGINT, Field, Index, String
 
 from src.db.async_db import Base
@@ -32,9 +33,23 @@ class AuditBase(Base):
         sa_type=String,
         index=True,
     )
-    created_at: datetime
-    updated_at: datetime | None = None
-    deleted_at: datetime | None = None
+    created_at: datetime = Field(  # type: ignore[call-overload]
+        sa_type=DateTime(timezone=True).with_variant(
+            TIMESTAMP(timezone=True), "postgresql"
+        )
+    )
+    updated_at: datetime | None = Field(  # type: ignore[call-overload]
+        default=None,
+        sa_type=DateTime(timezone=True).with_variant(
+            TIMESTAMP(timezone=True), "postgresql"
+        ),
+    )
+    deleted_at: datetime | None = Field(  # type: ignore[call-overload]
+        default=None,
+        sa_type=DateTime(timezone=True).with_variant(
+            TIMESTAMP(timezone=True), "postgresql"
+        ),
+    )
 
 
 class CoreEnum(str, Enum):
@@ -110,7 +125,7 @@ class Event(Base, table=True):
 
     data: dict[str, Any] = Field(
         default={},
-        sa_column=Column(JSON),
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql")),
         description="Event data used in the Node expression filters and validators",
     )
 
@@ -174,7 +189,7 @@ class Node(AuditBase, table=True):
 
     dep_ids: list[str] = Field(
         default=[],
-        sa_column=Column(JSON),
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql")),
         description="List of node IDs that this node depends on.",
     )
 
@@ -185,29 +200,29 @@ class Node(AuditBase, table=True):
 
     handler_input: ActionInput | None = Field(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql")),
     )
 
     filter: Expr | None = Field(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql")),
         description="Expression used by the SDKs",
     )
 
     validator: Expr | None = Field(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql")),
         description="Optional expression that performs an assertion on the node's upstream data.",
     )
 
     conditions: list[NodeCondition] = Field(
         default=[],
-        sa_column=Column(JSON),
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql")),
     )
 
     additional_meta: dict[str, Any] | None = Field(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql")),
     )
 
     __table_args__ = (Index("idx_node_id_flow", "id", "flow"),)
@@ -277,7 +292,7 @@ class EvalOutput(AuditBase, table=True):
     )
 
     output: BaseEvalOutput = Field(
-        sa_column=Column(JSON),
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql")),
     )
 
     def ensure(self) -> None:

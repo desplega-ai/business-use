@@ -231,6 +231,94 @@ async def run_eval(
     return result
 
 
+@router.post("/reeval-running-flows")
+async def reeval_running_flows(
+    _: Annotated[None, Depends(ensure_api_key)],
+    max_age_seconds: int = 86400,  # 24 hours default
+):
+    """Re-evaluate flows stuck in 'running' state.
+
+    This endpoint should be called periodically by an external cron job (every 30s recommended).
+    It re-evaluates recent EvalOutputs with status='running' to check if timeouts have expired.
+
+    Args:
+        max_age_seconds: Only check evaluations created within this time window (default: 24 hours)
+
+    Returns:
+        JSON with counts: total_running, updated, still_running, failed
+
+    Example cron:
+        * * * * * curl -X POST http://localhost:13370/v1/reeval-running-flows -H "X-Api-Key: KEY"
+        * * * * * sleep 30 && curl -X POST http://localhost:13370/v1/reeval-running-flows -H "X-Api-Key: KEY"
+    """
+    from datetime import datetime, timedelta
+
+    from src.eval import eval_flow_run
+
+    cutoff_time = datetime.utcnow() - timedelta(seconds=max_age_seconds)
+
+    async with transactional() as session:
+        # Find recent EvalOutputs with running status
+        stmt = (
+            select(EvalOutput)
+            .where(
+                EvalOutput.output["status"].astext == "running",  # type: ignore
+                EvalOutput.created_at >= cutoff_time,
+            )
+            .order_by(desc(EvalOutput.created_at))  # type: ignore
+        )
+
+        results = await session.execute(stmt)
+        running_evals = results.scalars().all()
+
+        log.info(f"Found {len(running_evals)} running evaluations to re-check")
+
+        updated_count = 0
+        still_running_count = 0
+        failed_count = 0
+
+        for eval_output in running_evals:
+            try:
+                # Re-evaluate
+                new_result = await eval_flow_run(
+                    run_id=eval_output.run_id,
+                    flow=eval_output.flow,
+                )
+
+                # Update output and timestamp
+                old_status = eval_output.output.status
+                eval_output.output = new_result
+                eval_output.updated_at = now()
+                await session.merge(eval_output)
+
+                # Track status changes
+                if new_result.status != old_status:
+                    log.info(
+                        f"Status changed for {eval_output.flow}/{eval_output.run_id}: "
+                        f"{old_status} → {new_result.status}"
+                    )
+                    updated_count += 1
+                else:
+                    still_running_count += 1
+
+            except Exception as e:
+                log.exception(
+                    f"Failed to re-evaluate {eval_output.flow}/{eval_output.run_id}: {e}"
+                )
+                failed_count += 1
+                continue
+
+        await session.commit()
+
+    return {
+        "message": "Re-evaluation complete",
+        "total_running": len(running_evals),
+        "updated": updated_count,
+        "still_running": still_running_count,
+        "failed": failed_count,
+    }
+
+
 @router.get("/nodes")
 async def get_nodes(_: Annotated[None, Depends(ensure_api_key)]):
     async with transactional() as s:

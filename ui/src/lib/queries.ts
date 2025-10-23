@@ -8,6 +8,7 @@ export function useNodes() {
     queryKey: ["nodes"],
     queryFn: () => apiClient.getNodes(),
     enabled: !!config,
+    refetchInterval: 5000,
   });
 }
 
@@ -16,6 +17,7 @@ export function useEvents(flow?: string, node_id?: string, limit = 100, offset =
     queryKey: ["events", flow, node_id, limit, offset],
     queryFn: () => apiClient.getEvents({ flow, node_id, limit, offset }),
     enabled: !!flow || !!node_id,
+    refetchInterval: 5000,
   });
 }
 
@@ -23,6 +25,7 @@ export function useEvalOutputs(name?: string[], ev_id?: string, limit = 100, off
   return useQuery({
     queryKey: ["eval-outputs", name, ev_id, limit, offset],
     queryFn: () => apiClient.getEvalOutputs({ name, ev_id, limit, offset }),
+    refetchInterval: 5000,
   });
 }
 

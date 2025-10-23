@@ -164,6 +164,7 @@ The core follows **Hexagonal Architecture** (Ports & Adapters) with strict separ
 - **api/**: FastAPI HTTP endpoints
   - `/v1/events-batch` - batch event ingestion
   - `/v1/run-eval` - flow evaluation
+  - `/v1/reeval-running-flows` - re-evaluate stuck running flows (cron endpoint)
   - Authentication via `X-Api-Key` header
 
 ### SDK Architecture (Python & JavaScript)
@@ -212,11 +213,16 @@ nodes:
 
 ### Core Backend Configuration
 
-The core backend uses YAML configuration files with the following priority:
+The core backend uses a flexible configuration system with the following priority:
 
-1. `./config.yaml` (development - local to project)
-2. `~/.business-use/config.yaml` (production - user home directory)
-3. Default values
+1. **Environment variables** (highest priority, recommended for production)
+2. **YAML configuration files** (recommended for local development)
+3. **Default values**
+
+**YAML config file locations (checked in order):**
+1. `./.business-use/config.yaml` (project-level, highest priority)
+2. `./config.yaml` (legacy support, will be deprecated)
+3. `~/.business-use/config.yaml` (global fallback)
 
 **Configuration file format (`config.yaml`):**
 
@@ -225,9 +231,14 @@ The core backend uses YAML configuration files with the following priority:
 # Required when running: serve, prod
 api_key: your_secret_key_here
 
-# Path to SQLite database file
-# Default: ./db.sqlite (dev) or ~/.business-use/db.sqlite (prod)
-database_path: ./db.sqlite
+# Database configuration
+# Option 1: Local SQLite (simple, recommended for development)
+database_path: ./.business-use/db.sqlite
+
+# Option 2: Turso (cloud database, recommended for production)
+# database_url: libsql://your-db-your-org.turso.io
+# database_auth_token: your_turso_token
+# database_path: ./.business-use/db.sqlite
 
 # Logging level: DEBUG, INFO, WARNING, ERROR
 log_level: info
@@ -238,6 +249,17 @@ debug: false
 # Environment name
 env: local
 ```
+
+**Environment variables (override YAML config):**
+
+All config values can be set via environment variables:
+- `BUSINESS_USE_API_KEY` - API authentication key
+- `BUSINESS_USE_DATABASE_URL` - Turso database URL (optional)
+- `BUSINESS_USE_DATABASE_AUTH_TOKEN` - Turso auth token (optional)
+- `BUSINESS_USE_DATABASE_PATH` - Local SQLite file path
+- `BUSINESS_USE_LOG_LEVEL` - Logging level
+- `BUSINESS_USE_ENV` - Environment name
+- `BUSINESS_USE_DEBUG` - Enable debug mode
 
 **Getting started:**
 
@@ -314,13 +336,55 @@ business-use serve
 
 ## Database
 
-- **Engine**: SQLite with WAL mode (aiosqlite for async)
+- **Engine**: SQLite (local) or Turso (cloud) with WAL mode (aiosqlite for async)
 - **Migrations**: Alembic (run `uv run business-use db migrate`)
   - Migrations are configured programmatically (no alembic.ini required)
   - Migration files located in `src/migrations/`
   - Packaged with the distribution for PyPI/uvx users
 - **Schema**: See `core/src/models.py` for Event, Node models
 - **Indexes**: `(run_id, flow)` for fast lookup
+- **Turso Support**: Optional cloud database backend for production deployments
+
+### Turso Setup (Optional)
+
+Turso provides a cloud-hosted, distributed SQLite database perfect for production:
+
+```bash
+# Install Turso CLI
+curl -sSfL https://get.tur.so/install.sh | bash
+
+# Login
+turso auth login
+
+# Create database
+turso db create your-app-name
+
+# Get credentials
+turso db show your-app-name --url
+# Output: libsql://your-app-name-org.turso.io
+
+turso db tokens create your-app-name
+# Output: eyJhbGciOiJFZERTQSIs...
+
+# Configure via environment variables (recommended for production)
+export BUSINESS_USE_DATABASE_URL="libsql://your-app-name.turso.io"
+export BUSINESS_USE_DATABASE_AUTH_TOKEN="eyJhbGci..."
+
+# Or via config.yaml (for local testing)
+# database_url: libsql://your-app-name.turso.io
+# database_auth_token: eyJhbGci...
+
+# Run migrations
+business-use db migrate
+
+# Start server
+business-use serve
+```
+
+**How it works:**
+- The application uses a local SQLite file for async database operations
+- With Turso configured, you can sync data using external tools
+- Recommended for multi-instance deployments and cloud environments
 - **Location**: `./db.sqlite` (dev with local config) or `~/.business-use/db.sqlite` (prod)
 
 ## SDK Configuration
@@ -420,6 +484,7 @@ Quick reference:
 4. **Batch API**: POST to `/v1/events-batch` with array of `EventBatchItem`
 5. **YAML loader**: Lives in `core/src/loaders/yaml_loader.py`, loads flows from `.business-use/` directory
 6. **Filter early exit**: If filter evaluates to False, event is dropped before queuing
+7. **Running flows cron**: Setup cron to call `/v1/reeval-running-flows` every 30s to handle timeouts
 
 ## Migration Notes
 

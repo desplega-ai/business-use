@@ -89,6 +89,9 @@ def filter_subgraph_from_node(
     Returns only the start node and all nodes downstream from it
     (nodes that depend on it, directly or transitively).
 
+    The start node is treated as a root node (dep_ids and filter cleared)
+    to make the subgraph self-contained and independent of upstream nodes.
+
     Args:
         flow_graph: Complete flow graph
         start_node_id: Node ID to start from
@@ -108,6 +111,8 @@ def filter_subgraph_from_node(
         >>> subgraph["graph"]
         {"b": ["d"], "d": []}
     """
+    from copy import copy
+
     if start_node_id not in flow_graph["graph"]:
         raise ValueError(f"Node {start_node_id} not found in graph")
 
@@ -136,7 +141,18 @@ def filter_subgraph_from_node(
         filtered_graph[node_id] = [
             child for child in flow_graph["graph"][node_id] if child in visited
         ]
-        filtered_nodes[node_id] = flow_graph["nodes"][node_id]
+
+        # Make a copy of the node
+        node = flow_graph["nodes"][node_id]
+
+        # For the start node, clear dependencies and filter to make it a root
+        if node_id == start_node_id:
+            modified_node = copy(node)
+            modified_node.dep_ids = []
+            modified_node.filter = None
+            filtered_nodes[node_id] = modified_node
+        else:
+            filtered_nodes[node_id] = node
 
     return FlowGraph(
         graph=filtered_graph,

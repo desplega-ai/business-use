@@ -103,6 +103,37 @@ class PythonEvaluator:
 
             return result
 
+        except KeyError as e:
+            # Detect common mistakes with context access
+            error_key = str(e).strip("'\"")
+
+            if "data" in error_key and "ctx" in expr.script:
+                # Likely trying to access ctx["data"] incorrectly
+                num_deps = len(ctx.get("deps", []))
+                logger.error(
+                    f"Failed to evaluate expression '{expr.script}': KeyError {e}\n"
+                    f"Hint: Context structure is ctx['deps'], not ctx['data'].\n"
+                    f"  - Available context keys: {list(ctx.keys())}\n"
+                    f"  - Number of dependencies: {num_deps}\n"
+                    f"  - For single dependency: Use ctx['data']['field'] (auto-populated)\n"
+                    f"  - For multiple dependencies: Use ctx['deps'][i]['data']['field']\n"
+                    f"  - Structure: ctx['deps'] = [{{'flow': str, 'id': str, 'data': dict}}, ...]"
+                )
+            else:
+                logger.error(
+                    f"Failed to evaluate expression '{expr.script}': KeyError {e}\n"
+                    f"Available data keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}\n"
+                    f"Available context keys: {list(ctx.keys())}"
+                )
+            return False
+
+        except NameError as e:
+            logger.error(
+                f"Failed to evaluate expression '{expr.script}': {e}\n"
+                f"Hint: Available variables are 'data' (event data) and 'ctx' (context with dependencies)"
+            )
+            return False
+
         except Exception as e:
             logger.error(
                 f"Failed to evaluate Python expression '{expr.script}': {e}",

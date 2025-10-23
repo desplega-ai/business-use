@@ -38,6 +38,8 @@ export interface DepData {
 export interface Ctx {
   /** List of upstream dependency event data */
   deps: DepData[];
+  /** Convenience field - populated with deps[0].data when there's exactly one dependency */
+  data?: Record<string, any>;
 }
 
 /**

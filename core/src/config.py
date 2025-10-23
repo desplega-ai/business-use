@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 from typing import Any, Final
 
@@ -55,6 +56,25 @@ def load_config() -> dict[str, Any]:
     return config_data
 
 
+def get_env_or_config(env_key: str, config_key: str, default: Any = None) -> Any:
+    """Get value from environment variable or config file, with env taking precedence.
+
+    Args:
+        env_key: Environment variable name
+        config_key: Key in config dictionary
+        default: Default value if neither env nor config has the value
+
+    Returns:
+        Value from env var (highest priority), config file, or default
+    """
+    # Priority: ENV var → Config file → Default
+    env_value = os.environ.get(env_key)
+    if env_value is not None:
+        return env_value
+
+    return _config.get(config_key, default)
+
+
 # Load configuration
 _config = load_config()
 
@@ -64,26 +84,58 @@ _is_dev = (Path(".business-use") / "config.yaml").exists() or Path(
 ).exists()
 
 # Log level configuration
-LOG_LEVEL: Any = _config.get("log_level", logging.WARNING)
-ENV: str = _config.get("env", "local")
-DEBUG: bool = _config.get("debug", False)
+LOG_LEVEL: Any = get_env_or_config(
+    "BUSINESS_USE_LOG_LEVEL", "log_level", logging.WARNING
+)
+ENV: str = get_env_or_config("BUSINESS_USE_ENV", "env", "local")
+DEBUG: bool = get_env_or_config("BUSINESS_USE_DEBUG", "debug", False)
 
 # API key - optional, validated when needed
-API_KEY: Final[str | None] = _config.get("api_key")
+API_KEY: Final[str | None] = get_env_or_config("BUSINESS_USE_API_KEY", "api_key")
 
 # Database configuration
+# DATABASE_URL can be:
+# - Postgres: postgresql+asyncpg://user:pass@host/db (or postgresql://, auto-converted)
+# - SQLite: Not set (uses DATABASE_PATH instead)
+_database_url_raw: str | None = get_env_or_config(
+    "BUSINESS_USE_DATABASE_URL", "database_url"
+)
+
+# Auto-convert postgresql:// to postgresql+asyncpg:// for async support
+if _database_url_raw and _database_url_raw.startswith("postgresql://"):
+    _database_url_raw = _database_url_raw.replace(
+        "postgresql://", "postgresql+asyncpg://", 1
+    )
+
+# Fix sslmode parameter for asyncpg (it doesn't accept sslmode, needs ssl)
+if _database_url_raw and "sslmode=" in _database_url_raw:
+    _database_url_raw = _database_url_raw.replace("sslmode=", "ssl=")
+
+# Local database path for SQLite
 # Use .business-use/db.sqlite in dev, ~/.business-use/db.sqlite in production
 _default_db_path = (
     "./.business-use/db.sqlite"
     if _is_dev
     else str(Path.home() / ".business-use" / "db.sqlite")
 )
-DATABASE_PATH: Final[str] = _config.get("database_path", _default_db_path)
+DATABASE_PATH: Final[str] = get_env_or_config(
+    "BUSINESS_USE_DATABASE_PATH", "database_path", _default_db_path
+)
 
 # Ensure ~/.business-use directory exists for production
 if not _is_dev:
     Path.home().joinpath(".business-use").mkdir(parents=True, exist_ok=True)
 
-# For absolute paths, SQLite URLs need 4 slashes total: sqlite+aiosqlite:/// + /path
-# For relative paths, use 3 slashes: sqlite+aiosqlite:///path
-DATABASE_URL: Final[str] = f"sqlite+aiosqlite:///{DATABASE_PATH}"
+# Determine database type and build DATABASE_URL
+_is_postgres = _database_url_raw and (
+    _database_url_raw.startswith("postgresql+asyncpg://")
+    or _database_url_raw.startswith("postgres://")
+)
+
+# Build DATABASE_URL based on database type
+DATABASE_URL: Final[str] = (
+    _database_url_raw  # type: ignore[assignment]
+    if _is_postgres
+    else f"sqlite+aiosqlite:///{DATABASE_PATH}"
+)
+IS_POSTGRES: Final[bool] = bool(_is_postgres)

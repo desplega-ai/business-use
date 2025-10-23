@@ -21,6 +21,10 @@ from src.models import (  # noqa: F401
 config = context.config
 
 # Set the SQLAlchemy URL from our config
+# Migrations use the same database URL as the runtime
+# This will be either:
+# - postgresql+asyncpg://... for Postgres (Neon)
+# - sqlite+aiosqlite://... for local SQLite
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 # Interpret the config file for Python logging.

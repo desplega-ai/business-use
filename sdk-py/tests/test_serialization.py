@@ -76,6 +76,24 @@ class TestLambdaSerialization:
         assert " and " in result.script
         assert " or " in result.script
 
+    def test_multiline_lambda_with_string_literals(self):
+        """Test lambda with string literals containing special characters.
+
+        Ensures that colons and other delimiters inside strings don't break parsing.
+        """
+        processor = self._create_mock_processor()
+
+        lambda_fn = lambda data, ctx: (
+            data["key:with:colons"] == "value:also:colons"
+            and data["status"] == "active"
+        )
+        result = processor._serialize_lambda(lambda_fn)
+
+        assert result.engine == "python"
+        assert 'data["key:with:colons"]' in result.script
+        assert '"value:also:colons"' in result.script
+        assert 'data["status"]' in result.script
+
     def test_simple_function_with_return(self):
         """Test function with simple return statement."""
         processor = self._create_mock_processor()

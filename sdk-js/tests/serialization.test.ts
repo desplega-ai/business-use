@@ -12,7 +12,45 @@ function serializeFunction(fn: Function): { engine: string; script: string } {
 
   // Handle arrow functions
   if (source.includes('=>')) {
-    const arrowIndex = source.indexOf('=>');
+    // Find the arrow operator, being careful to skip strings
+    let arrowIndex = -1;
+    let inString = false;
+    let stringChar: string | null = null;
+
+    for (let i = 0; i < source.length - 1; i++) {
+      const char = source[i];
+      const nextChar = source[i + 1];
+
+      // Track string literals
+      if (
+        (char === '"' || char === "'" || char === '`') &&
+        (i === 0 || source[i - 1] !== '\\')
+      ) {
+        if (!inString) {
+          inString = true;
+          stringChar = char;
+        } else if (char === stringChar) {
+          inString = false;
+          stringChar = null;
+        }
+        continue;
+      }
+
+      if (inString) {
+        continue;
+      }
+
+      // Look for '=>'
+      if (char === '=' && nextChar === '>') {
+        arrowIndex = i;
+        break;
+      }
+    }
+
+    if (arrowIndex === -1) {
+      return { engine: 'js', script: source };
+    }
+
     let body = source.substring(arrowIndex + 2).trim();
 
     // Remove wrapping braces if present
@@ -31,9 +69,29 @@ function serializeFunction(fn: Function): { engine: string; script: string } {
     // Smart removal of trailing syntax (comma, parenthesis) that are part of function call
     let nestingLevel = 0;
     let lastSignificantChar = body.length - 1;
+    inString = false;
+    stringChar = null;
 
     for (let i = body.length - 1; i >= 0; i--) {
       const char = body[i];
+
+      // Track string literals (going backwards)
+      if (
+        (char === '"' || char === "'" || char === '`') &&
+        (i === 0 || body[i - 1] !== '\\')
+      ) {
+        if (!inString) {
+          inString = true;
+          stringChar = char;
+        } else if (char === stringChar) {
+          inString = false;
+          stringChar = null;
+        }
+      }
+
+      if (inString) {
+        continue;
+      }
 
       if (')]}}>'.includes(char)) {
         nestingLevel++;
@@ -174,5 +232,36 @@ describe('Function Serialization', () => {
     expect(result.script).toContain('data.status');
     expect(result.script).toContain('data.amount');
     expect(result.script).toContain('data.bypass');
+  });
+
+  it('should serialize multi-line arrow function with .get() and ctx.data access', () => {
+    // Regression test for issue where multi-line arrows with string literals
+    // in method calls weren't being parsed correctly
+    const fn = (data: any, ctx: any) =>
+      !data.get('rerun_required', false) && data.run_id === ctx.data.run_id;
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    // Should capture the full expression
+    expect(result.script).toContain('!data.get(');
+    expect(result.script).toContain('rerun_required');
+    expect(result.script).toContain('data.run_id');
+    expect(result.script).toContain('ctx.data.run_id');
+    expect(result.script).toContain('&&');
+    // Should not have trailing comma or parenthesis
+    expect(result.script.trim()).not.toMatch(/[,)]$/);
+  });
+
+  it('should serialize arrow function with string literals containing special chars', () => {
+    // Ensures that => operators inside strings don't break parsing
+    const fn = (data: any) =>
+      data['key=>with=>arrows'] === 'value=>also=>arrows' &&
+      data.status === 'active';
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    expect(result.script).toContain('key=>with=>arrows');
+    expect(result.script).toContain('value=>also=>arrows');
+    expect(result.script).toContain('data.status');
   });
 });

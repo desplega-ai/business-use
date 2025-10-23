@@ -236,6 +236,14 @@ def init() -> None:
     config_path = project_config if choice == "1" else user_config
     click.echo()
 
+    # Ask about database backend
+    click.echo("Which database backend would you like to use?")
+    click.echo("  1. SQLite (local file, recommended for development)")
+    click.echo("  2. PostgreSQL (Neon or other hosted Postgres, for production)")
+    db_choice = click.prompt("Choose", type=click.Choice(["1", "2"]), default="1")
+    use_postgres = db_choice == "2"
+    click.echo()
+
     # Generate API key
     api_key = generate_api_key()
     click.secho("Generated API Key:", fg="green", bold=True)
@@ -268,6 +276,36 @@ def init() -> None:
 
         # Set API key
         config_data["api_key"] = api_key
+
+        # Configure PostgreSQL if selected
+        if use_postgres:
+            click.echo()
+            click.secho("PostgreSQL Configuration", fg="cyan", bold=True)
+            click.echo()
+            click.echo("You'll need a PostgreSQL connection URL, for example:")
+            click.echo(
+                "  • Neon: postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/dbname"
+            )
+            click.echo("  • Other: postgresql://user:pass@host:port/dbname")
+            click.echo()
+            click.echo("Get Neon credentials from: https://neon.tech")
+            click.echo()
+
+            database_url = questionary.text(
+                "PostgreSQL database URL:",
+                validate=lambda x: x.startswith("postgresql://")
+                or x.startswith("postgres://")
+                if x
+                else "URL must start with postgresql:// or postgres://",
+            ).ask()
+
+            if database_url:
+                config_data["database_url"] = database_url
+                click.echo()
+                click.secho("✓ PostgreSQL configuration added", fg="green")
+            else:
+                click.secho("✗ PostgreSQL setup cancelled - using SQLite", fg="yellow")
+                use_postgres = False
 
         # Ensure parent directory exists
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -387,6 +425,11 @@ def config() -> None:
         db_path = config_data.get("database_path", "")
         click.echo(f"  Database:      {db_path or '(not configured)'}")
 
+        # Show PostgreSQL configuration if present
+        db_url = config_data.get("database_url", "")
+        if db_url:
+            click.secho(f"  Postgres URL:  {db_url}", fg="cyan")
+
         log_level = config_data.get("log_level", "info")
         click.echo(f"  Log Level:     {log_level}")
 
@@ -399,10 +442,27 @@ def config() -> None:
         click.echo("-" * 60)
         click.echo()
 
+        # Show environment variable overrides
+        import os
+
+        env_overrides = []
+        if os.getenv("BUSINESS_USE_DATABASE_URL"):
+            env_overrides.append("BUSINESS_USE_DATABASE_URL")
+        if os.getenv("BUSINESS_USE_API_KEY"):
+            env_overrides.append("BUSINESS_USE_API_KEY")
+
+        if env_overrides:
+            click.secho("⚠️  Environment variable overrides detected:", fg="yellow")
+            for var in env_overrides:
+                click.echo(f"  • {var}")
+            click.echo()
+
         # Menu options
+        postgres_status = "✓ configured" if db_url else "not configured"
         choices = [
             "Regenerate API key",
             "Change database path",
+            f"Configure PostgreSQL ({postgres_status})",
             "Set log level",
             f"Toggle debug mode (currently: {debug})",
             "Set environment name",
@@ -457,6 +517,63 @@ def config() -> None:
                 if new_path and new_path != current:
                     config_data["database_path"] = new_path
                     click.secho(f"✓ Database path updated to: {new_path}", fg="green")
+                    click.echo()
+                    questionary.press_any_key_to_continue(
+                        "Press any key to continue..."
+                    ).ask()
+
+            elif choice.startswith("Configure PostgreSQL"):
+                click.echo()
+                click.secho("PostgreSQL Configuration", fg="cyan", bold=True)
+                click.echo()
+
+                postgres_action = questionary.select(
+                    "What would you like to do?",
+                    choices=[
+                        "Add/Update PostgreSQL URL",
+                        "Remove PostgreSQL configuration",
+                        "Back to main menu",
+                    ],
+                ).ask()
+
+                if postgres_action == "Add/Update PostgreSQL URL":
+                    click.echo()
+                    click.echo("Get your PostgreSQL credentials from:")
+                    click.echo("  • Neon: https://neon.tech")
+                    click.echo("  • Or use your own PostgreSQL instance")
+                    click.echo()
+
+                    current_url = config_data.get("database_url", "")
+                    new_url = questionary.text(
+                        "PostgreSQL database URL (postgresql://...):",
+                        default=current_url,
+                        validate=lambda x: x.startswith("postgresql://")
+                        or x.startswith("postgres://")
+                        if x
+                        else "URL must start with postgresql:// or postgres://",
+                    ).ask()
+
+                    if new_url:
+                        config_data["database_url"] = new_url
+                        click.echo()
+                        click.secho("✓ PostgreSQL configuration updated", fg="green")
+                    else:
+                        click.echo()
+                        click.secho("✗ PostgreSQL configuration cancelled", fg="yellow")
+
+                    click.echo()
+                    questionary.press_any_key_to_continue(
+                        "Press any key to continue..."
+                    ).ask()
+
+                elif postgres_action == "Remove PostgreSQL configuration":
+                    if "database_url" in config_data:
+                        del config_data["database_url"]
+                    # Clean up legacy Turso auth token if it exists
+                    if "database_auth_token" in config_data:
+                        del config_data["database_auth_token"]
+                    click.echo()
+                    click.secho("✓ PostgreSQL configuration removed", fg="green")
                     click.echo()
                     questionary.press_any_key_to_continue(
                         "Press any key to continue..."

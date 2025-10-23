@@ -5,9 +5,18 @@
 # Generate with: business-use init
 api_key: "your_api_key_here"
 
-# Path to SQLite database
-# Default: ./.business-use/db.sqlite (project-level)
+# Database Configuration
+# Choose ONE of these configurations:
+
+# Option 1: Local SQLite (simple, recommended for development)
 database_path: "./.business-use/db.sqlite"
+
+# Option 2: PostgreSQL/Neon (cloud database, recommended for production)
+# Uncomment and configure this if using PostgreSQL:
+# database_url: "postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/dbname"
+#
+# Note: When database_url is set, the application uses PostgreSQL.
+# When database_url is not set, it uses SQLite at database_path.
 
 # Logging level: DEBUG, INFO, WARNING, ERROR
 log_level: "info"
@@ -17,3 +26,11 @@ debug: false
 
 # Environment name (e.g., local, dev, staging, prod)
 env: "local"
+
+# Environment Variable Overrides (higher priority than YAML):
+# BUSINESS_USE_API_KEY
+# BUSINESS_USE_DATABASE_URL
+# BUSINESS_USE_DATABASE_PATH
+# BUSINESS_USE_LOG_LEVEL
+# BUSINESS_USE_ENV
+# BUSINESS_USE_DEBUG

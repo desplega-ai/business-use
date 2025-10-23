@@ -250,55 +250,103 @@ class BatchProcessor:
 
             # Handle lambda expressions
             if "lambda" in source:
-                # Extract the expression after the colon
-                # e.g., "lambda data, ctx: data['amount'] > 0" -> "data['amount'] > 0"
-                if ":" in source:
-                    # Get everything after the colon (the lambda body)
-                    colon_index = source.index(":")
-                    body = source[colon_index + 1 :].strip()
+                # Find the lambda keyword and extract everything after the colon
+                # For multi-line lambdas, we need to find the matching parenthesis/comma
+                lambda_start = source.find("lambda")
+                if lambda_start == -1:
+                    return Expr(engine="python", script=source)
 
-                    # Remove trailing comma, parenthesis, etc. that are part of the function call
-                    # We need to be smart about this - only remove trailing syntax, not part of the expression
-                    # Walk backwards to find where the lambda body actually ends
+                # Find the colon that belongs to this lambda (after the parameters)
+                # We need to skip any colons that might be in default parameter values
+                colon_index = -1
+                paren_depth = 0
+                bracket_depth = 0
+                in_string = False
+                string_char = None
 
-                    # First, remove any trailing whitespace
-                    body = body.rstrip()
+                for i in range(lambda_start, len(source)):
+                    char = source[i]
 
-                    # Track nesting level (parentheses, brackets, braces)
-                    nesting_level = 0
-                    last_significant_char = len(body) - 1
+                    # Track string literals
+                    if char in "\"'" and (i == 0 or source[i - 1] != "\\"):
+                        if not in_string:
+                            in_string = True
+                            string_char = char
+                        elif char == string_char:
+                            in_string = False
+                            string_char = None
+                        continue
 
-                    # Walk backwards through the body
-                    for i in range(len(body) - 1, -1, -1):
-                        char = body[i]
+                    if in_string:
+                        continue
 
-                        # Track closing delimiters (increase nesting when going backwards)
-                        if char in ")]}>":
-                            nesting_level += 1
-                        elif char in "([{<":
-                            nesting_level -= 1
+                    # Track nesting
+                    if char == "(":
+                        paren_depth += 1
+                    elif char == ")":
+                        paren_depth -= 1
+                    elif char == "[":
+                        bracket_depth += 1
+                    elif char == "]":
+                        bracket_depth -= 1
 
-                        # If we're at nesting level 0 and hit a comma, that's likely the end
-                        # of the lambda argument in the function call
-                        if nesting_level == 0 and char == ",":
-                            last_significant_char = i - 1
-                            break
+                    # The lambda's colon is at depth 0
+                    if char == ":" and paren_depth == 0 and bracket_depth == 0:
+                        colon_index = i
+                        break
 
-                        # If nesting level goes negative, we've gone too far
-                        if nesting_level < 0:
-                            last_significant_char = i - 1
-                            break
+                if colon_index == -1:
+                    return Expr(engine="python", script=source)
 
-                    # Extract the actual lambda body
-                    body = body[: last_significant_char + 1].strip()
+                # Extract everything after the colon
+                body = source[colon_index + 1 :].strip()
 
-                    # Final cleanup: remove trailing syntax characters that aren't part of the expression
-                    while body and body[-1] in ",);":
-                        body = body[:-1].strip()
+                # Now find where the lambda body ends by tracking nesting levels
+                # Walk backwards to find the true end of the lambda expression
+                nesting_level = 0
+                last_significant_char = len(body) - 1
+                in_string = False
+                string_char = None
 
-                    return Expr(engine="python", script=body)
-                # Fallback if no colon found in lambda
-                return Expr(engine="python", script=source)
+                for i in range(len(body) - 1, -1, -1):
+                    char = body[i]
+
+                    # Track strings (going backwards)
+                    if char in "\"'" and (i == 0 or body[i - 1] != "\\"):
+                        if not in_string:
+                            in_string = True
+                            string_char = char
+                        elif char == string_char:
+                            in_string = False
+                            string_char = None
+
+                    if in_string:
+                        continue
+
+                    # Track closing delimiters (increase nesting when going backwards)
+                    if char in ")]}>":
+                        nesting_level += 1
+                    elif char in "([{<":
+                        nesting_level -= 1
+
+                    # At nesting level 0, a comma likely ends the lambda argument
+                    if nesting_level == 0 and char == ",":
+                        last_significant_char = i - 1
+                        break
+
+                    # If nesting goes negative, we've hit an opening delimiter
+                    if nesting_level < 0:
+                        last_significant_char = i - 1
+                        break
+
+                # Extract the actual lambda body
+                body = body[: last_significant_char + 1].strip()
+
+                # Final cleanup: remove trailing syntax characters
+                while body and body[-1] in ",);":
+                    body = body[:-1].strip()
+
+                return Expr(engine="python", script=body)
 
             # Handle regular functions
             else:

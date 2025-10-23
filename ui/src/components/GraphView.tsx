@@ -175,17 +175,32 @@ function GraphContent({ nodes, selectedNode, onNodeClick, evalInfo }: GraphViewP
             if (nodeEvalInfo) {
               // Check if this dependency was successful
               if (nodeEvalInfo.dep_node_ids.includes(depId)) {
-                if (nodeEvalInfo.status === "passed") {
-                  edgeColor = "#22c55e"; // green-500
-                } else if (
-                  nodeEvalInfo.status === "failed" ||
-                  nodeEvalInfo.status === "error" ||
-                  nodeEvalInfo.status === "timed_out"
-                ) {
-                  edgeColor = "#ef4444"; // red-500
-                } else if (nodeEvalInfo.status === "skipped" || nodeEvalInfo.status === "pending") {
-                  edgeColor = "#94a3b8"; // gray-400
-                  edgeStyle = "5 5"; // dashed
+                switch (nodeEvalInfo.status) {
+                  case "passed":
+                    edgeColor = "#22c55e"; // green-500
+                    break;
+                  case "failed":
+                  case "error":
+                  case "timed_out":
+                    edgeColor = "#ef4444"; // red-500
+                    break;
+                  case "running":
+                    edgeColor = "#3b82f6"; // blue-500
+                    break;
+                  case "pending":
+                  case "skipped":
+                    edgeColor = "#94a3b8"; // gray-400
+                    edgeStyle = "5 5"; // dashed
+                    break;
+                  case "cancelled":
+                    edgeColor = "#f97316"; // orange-500
+                    edgeStyle = "5 5"; // dashed
+                    break;
+                  case "flaky":
+                    edgeColor = "#eab308"; // yellow-500
+                    break;
+                  default:
+                    edgeColor = "#94a3b8"; // gray-400 (fallback)
                 }
               }
             }

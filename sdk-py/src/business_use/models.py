@@ -1,7 +1,7 @@
 """Internal models for Business-Use SDK."""
 
 from collections.abc import Callable
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel
 
@@ -29,9 +29,11 @@ class Ctx(TypedDict):
 
     Attributes:
         deps: List of upstream dependency event data
+        data: Convenience field - populated with deps[0]["data"] when there's exactly one dependency
     """
 
     deps: list[DepData]
+    data: NotRequired[dict[str, Any]]  # Optional: only present when len(deps) == 1
 
 
 class Expr(BaseModel):

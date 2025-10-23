@@ -22,7 +22,7 @@ uv run business-use prod
 
 - **Event Ingestion**: Receives events from SDKs via `/v1/events-batch`
 - **Flow Evaluation**: Validates event sequences against flow definitions
-- **Storage**: SQLite database with async queries
+- **Storage**: SQLite (local) or PostgreSQL/Neon (cloud) with async queries
 - **CLI**: Commands for evaluation, inspection, and management
 
 ## Key Commands
@@ -71,15 +71,71 @@ Follows **Hexagonal Architecture** (Ports & Adapters):
 
 ## Configuration
 
-Configuration loaded from:
-1. `./config.yaml` (development)
-2. `~/.business-use/config.yaml` (production)
+### Priority Order
+1. **Environment variables** (highest priority, production)
+2. **YAML config files** (local development)
+3. **Defaults**
 
+### Config File Locations
+1. `./.business-use/config.yaml` (project-level)
+2. `./config.yaml` (legacy, deprecated)
+3. `~/.business-use/config.yaml` (global)
+
+### Local Development (SQLite)
+```bash
+# Interactive setup
+business-use init  # Choose SQLite
+
+# Or manually create .business-use/config.yaml:
+```
 ```yaml
 api_key: your_secret_key_here
-database_path: ./db.sqlite
+database_path: ./.business-use/db.sqlite
 log_level: info
 ```
+
+### Production Deployment (Environment Variables)
+```bash
+# Required
+export BUSINESS_USE_API_KEY="your_secret_key"
+
+# Optional: PostgreSQL (cloud database, e.g., Neon)
+export BUSINESS_USE_DATABASE_URL="postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/dbname"
+
+# Optional: SQLite database path (used when DATABASE_URL is not set)
+export BUSINESS_USE_DATABASE_PATH="/app/data/db.sqlite"
+
+# Optional settings
+export BUSINESS_USE_LOG_LEVEL="info"
+export BUSINESS_USE_ENV="production"
+```
+
+### PostgreSQL Setup with Neon (Optional)
+
+Neon provides serverless PostgreSQL with autoscaling:
+
+```bash
+# Visit https://neon.tech and create a project
+# Copy the connection string from the dashboard
+
+# Use in production
+export BUSINESS_USE_DATABASE_URL="postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/dbname"
+
+# Run migrations
+uv run business-use db migrate
+```
+
+**Note**: For local development, omit `BUSINESS_USE_DATABASE_URL` to use SQLite automatically.
+
+### Available Environment Variables
+
+All config values can be overridden via environment variables:
+- `BUSINESS_USE_API_KEY` - API authentication key
+- `BUSINESS_USE_DATABASE_URL` - PostgreSQL database URL (optional, e.g., Neon)
+- `BUSINESS_USE_DATABASE_PATH` - Local SQLite file path (used when DATABASE_URL not set)
+- `BUSINESS_USE_LOG_LEVEL` - Logging level (DEBUG, INFO, WARNING, ERROR)
+- `BUSINESS_USE_ENV` - Environment name (local, dev, staging, prod)
+- `BUSINESS_USE_DEBUG` - Enable debug mode (true/false)
 
 ## Installation from PyPI
 

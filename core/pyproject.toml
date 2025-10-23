@@ -1,6 +1,6 @@
 [project]
 name = "business-use-core"
-version = "0.3.1"
+version = "0.4.0"
 description = "Business-Use Core CLI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -29,6 +29,7 @@ dependencies = [
     "pydantic>=2.12.3",
     "sqlmodel>=0.0.27",
     "aiosqlite>=0.20.0",
+    "asyncpg>=0.30.0",
     "alembic>=1.15.0",
     "click>=8.1.0",
     "bubus>=1.5.6",

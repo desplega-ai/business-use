@@ -108,6 +108,10 @@ def match_events_to_layers(
                                     }
                                     ctx["deps"].append(dep_data)
 
+                # Convenience: if single dep, populate ctx["data"]
+                if len(ctx["deps"]) == 1:
+                    ctx["data"] = ctx["deps"][0]["data"]
+
                 # Evaluate filter if present
                 include_event = True
                 if current_node.filter:
@@ -361,6 +365,10 @@ def validate_flow_execution(
                                     "data": prev_event.data,
                                 }
                                 ctx["deps"].append(dep_data)
+
+            # Convenience: if single dep, populate ctx["data"]
+            if len(ctx["deps"]) == 1:
+                ctx["data"] = ctx["deps"][0]["data"]
 
             # Validate each event for this node
             status: str = "running"

@@ -23,14 +23,16 @@ class DepData(TypedDict):
     data: dict[str, Any]
 
 
-class Ctx(TypedDict):
+class Ctx(TypedDict, total=False):
     """Context passed to filter and validator functions.
 
     Attributes:
-        deps: List of upstream dependency event data
+        deps: List of upstream dependency event data (always present)
+        data: Convenience field - populated with deps[0]["data"] when exactly one dependency exists
     """
 
     deps: list[DepData]
+    data: dict[str, Any]  # Only present when len(deps) == 1
 
 
 class FlowGraph(TypedDict):
