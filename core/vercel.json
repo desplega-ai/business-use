@@ -13,10 +13,5 @@
     }
   ],
   "env": {
-    "BUSINESS_USE_API_KEY": "@business_use_api_key",
-    "BUSINESS_USE_DATABASE_URL": "@business_use_database_url",
-    "BUSINESS_USE_DATABASE_AUTH_TOKEN": "@business_use_database_auth_token",
-    "BUSINESS_USE_LOG_LEVEL": "info",
-    "BUSINESS_USE_ENV": "production"
   }
 }
