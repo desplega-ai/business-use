@@ -450,6 +450,9 @@ origins = [
     "http://localhost:13370",
     "http://localhost:5174",
     "https://business-use.vercel.app",
+    "https://business-use.desplega.ai",
+    "https://business-use.com",
+    "https://ui.business-use.com",
 ]
 
 
