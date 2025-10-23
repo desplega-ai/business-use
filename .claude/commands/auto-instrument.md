@@ -15,7 +15,12 @@ pip install business-use
 from business_use import initialize, ensure
 
 # Initialize once at application startup
-initialize(api_key="your-api-key")
+# Recommended: Use environment variables
+# Set BUSINESS_USE_API_KEY and BUSINESS_USE_URL in your environment
+initialize()  # Automatically uses env vars
+
+# Or with explicit parameters (overrides env vars)
+initialize(api_key="your-api-key", url="http://localhost:13370")
 
 # Track events with ensure()
 ensure(
@@ -26,6 +31,12 @@ ensure(
     dep_ids=["upstream_event"],  # Optional
     validator=lambda data, ctx: True  # Optional, for assertions
 )
+```
+
+**Environment Variables (Recommended):**
+```bash
+export BUSINESS_USE_API_KEY="your-api-key"
+export BUSINESS_USE_URL="http://localhost:13370"  # Optional, defaults to http://localhost:13370
 ```
 
 ### JavaScript/TypeScript SDK
@@ -39,7 +50,12 @@ npm i @desplega.ai/business-use
 import { initialize, ensure } from '@desplega.ai/business-use';
 
 // Initialize once at application startup
-initialize({ apiKey: 'your-api-key' });
+// Recommended: Use environment variables
+// Set BUSINESS_USE_API_KEY and BUSINESS_USE_URL in your environment
+initialize();  // Automatically uses env vars
+
+// Or with explicit parameters (overrides env vars)
+initialize({ apiKey: 'your-api-key', url: 'http://localhost:13370' });
 
 // Track events with ensure()
 ensure({
@@ -50,6 +66,12 @@ ensure({
   depIds: ['upstream_event'], // Optional
   validator: (data, ctx) => true // Optional, for assertions
 });
+```
+
+**Environment Variables (Recommended):**
+```bash
+export BUSINESS_USE_API_KEY="your-api-key"
+export BUSINESS_USE_URL="http://localhost:13370"  # Optional, defaults to http://localhost:13370
 ```
 
 ## Your Task
@@ -171,17 +193,19 @@ Provide:
 2. **Initialization code** with recommended location in codebase
    - For Python: typically in `main.py`, `app.py`, or application entry point
    - For JavaScript: typically in `index.ts`, `main.ts`, or app initialization file
-3. **Backend Setup** (if not already running):
+3. **Backend Setup** (required - runs as separate service):
    ```bash
-   # Option 1: With uvx (no install)
-   uvx business-use-core db migrate  # Initialize database
-   uvx business-use-core serve       # Start server
+   # Option 1: With uvx (no install required - recommended)
+   uvx business-use-core init        # Interactive setup (generates API key, creates config, initializes DB)
+   uvx business-use-core serve       # Start backend server
 
-   # Option 2: After install (cleaner)
+   # Option 2: Install globally (cleaner commands)
    pip install business-use-core
-   business-use db migrate
-   business-use serve --reload
+   business-use init                 # Interactive setup
+   business-use serve                # Start backend server (or `business-use prod` for production)
    ```
+
+   **Note**: The backend runs as a separate service that your application sends events to. It is NOT part of your application code.
 4. **List of files to modify** with specific instrumentation points
 5. **Testing instructions** using the validation commands
 
@@ -240,13 +264,16 @@ Shall I proceed with implementing this across the codebase?"
 
 After instrumentation, show users how to validate:
 
-**With uvx (no install required):**
+**With uvx (no install required - recommended):**
 ```bash
 # Evaluate a specific flow run
 uvx business-use-core eval-run <run_id> <flow_name> --verbose
 
 # Visualize the flow structure with actual event data
 uvx business-use-core eval-run <run_id> <flow_name> --show-graph
+
+# Combine graph + verbose for complete picture
+uvx business-use-core eval-run <run_id> <flow_name> -g -v
 
 # Get JSON output for automation/CI pipelines
 uvx business-use-core eval-run <run_id> <flow_name> --json-output
@@ -258,32 +285,33 @@ uvx business-use-core show-graph <flow_name>
 uvx business-use-core runs --flow <flow_name>
 ```
 
-**After installation (cleaner commands):**
+**After global installation (shorter commands):**
 ```bash
-# Install backend
+# Install backend globally
 pip install business-use-core
 
-# Now use the shorter command
+# Now use the shorter command everywhere
 business-use eval-run <run_id> <flow_name> --verbose
+business-use eval-run <run_id> <flow_name> --show-graph
 business-use show-graph <flow_name>
 business-use runs --flow <flow_name>
 ```
 
 **Backend Setup Commands:**
 ```bash
-# Initialize database (first time only)
-uvx business-use-core db migrate
-# or if installed:
-business-use db migrate
+# First-time setup (interactive - recommended)
+uvx business-use-core init        # Generates API key, creates config, initializes DB
+# OR if installed globally:
+business-use init
 
-# Start development server
+# Start development server (with auto-reload)
 uvx business-use-core serve --reload
-# or:
+# OR:
 business-use serve --reload
 
-# Start production server
+# Start production server (4 workers)
 uvx business-use-core prod
-# or:
+# OR:
 business-use prod
 ```
 
