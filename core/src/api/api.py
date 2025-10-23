@@ -454,6 +454,8 @@ origins = [
     "https://business-use.com",
     "https://www.business-use.com",
     "https://ui.business-use.com",
+    # TODO: Remove
+    "*"
 ]
 
 
