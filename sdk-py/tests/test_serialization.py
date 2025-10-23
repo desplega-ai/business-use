@@ -59,6 +59,10 @@ class TestLambdaSerialization:
         assert " or " in result.script
         # Should not have trailing comma
         assert not result.script.endswith(",")
+        # CRITICAL: Should have complete expression with proper closure
+        # The serializer was stripping the closing ) when it shouldn't
+        # This is a formatting thing - the expression should be complete
+        assert "True" in result.script  # Make sure we got to the end
 
     def test_multiline_lambda_complex(self):
         """Test complex lambda with multiple conditions."""
@@ -314,3 +318,177 @@ class TestValidatorSerialization:
 
         assert result.engine == "python"
         assert result.script == 'data["amount"] > 0'
+
+    def test_lambda_accessing_nested_deps_data(self):
+        """Test lambda that accesses nested dep data - the CRITICAL test case!
+
+        This is the exact pattern that was failing:
+        filter=lambda data, ctx: data["run_id"] == ctx["deps"][0]["data"]["run_id"]
+
+        The serializer was cutting off the expression too early, losing the nested access.
+        """
+        processor = BatchProcessor(
+            api_key="test",
+            base_url="http://localhost",
+            batch_size=100,
+            batch_interval=5,
+            max_queue_size=1000,
+        )
+
+        # The exact pattern that was reported as broken
+        filter_fn = lambda data, ctx: data["run_id"] == ctx["deps"][0]["data"]["run_id"]
+        result = processor._serialize_lambda(filter_fn)
+
+        assert result.engine == "python"
+        # The ENTIRE expression must be captured
+        expected = 'data["run_id"] == ctx["deps"][0]["data"]["run_id"]'
+        assert result.script == expected, f"Expected: {expected}\nGot: {result.script}"
+
+    def test_lambda_accessing_nested_deps_with_get(self):
+        """Test lambda with nested deps access using .get() method."""
+        processor = BatchProcessor(
+            api_key="test",
+            base_url="http://localhost",
+            batch_size=100,
+            batch_interval=5,
+            max_queue_size=1000,
+        )
+
+        # Another common pattern with nested access
+        filter_fn = lambda data, ctx: data["run_id"] == ctx["deps"][0]["data"].get(
+            "run_id", ""
+        )
+        result = processor._serialize_lambda(filter_fn)
+
+        assert result.engine == "python"
+        expected = 'data["run_id"] == ctx["deps"][0]["data"].get("run_id", "")'
+        assert result.script == expected, f"Expected: {expected}\nGot: {result.script}"
+
+    def test_lambda_multiple_nested_array_access(self):
+        """Test lambda with multiple nested array accesses."""
+        processor = BatchProcessor(
+            api_key="test",
+            base_url="http://localhost",
+            batch_size=100,
+            batch_interval=5,
+            max_queue_size=1000,
+        )
+
+        # Complex nested access
+        validator = lambda data, ctx: (
+            data["items"][0]["price"] == ctx["deps"][0]["data"]["items"][1]["price"]
+        )
+        result = processor._serialize_lambda(validator)
+
+        assert result.engine == "python"
+        assert 'data["items"][0]["price"]' in result.script
+        assert 'ctx["deps"][0]["data"]["items"][1]["price"]' in result.script
+
+    def test_lambda_in_function_call_with_trailing_comma(self):
+        """Test lambda passed as argument in function call (realistic usage pattern).
+
+        This simulates the exact context where the lambda would be used in ensure():
+        ensure(
+            id="something",
+            filter=lambda data, ctx: data["run_id"] == ctx["deps"][0]["data"]["run_id"],
+            ...
+        )
+        """
+        processor = BatchProcessor(
+            api_key="test",
+            base_url="http://localhost",
+            batch_size=100,
+            batch_interval=5,
+            max_queue_size=1000,
+        )
+
+        # Simulate this being passed as a function argument
+        # The serializer should strip trailing comma/parenthesis
+        filter_fn = lambda data, ctx: data["run_id"] == ctx["deps"][0]["data"]["run_id"]
+        result = processor._serialize_lambda(filter_fn)
+
+        assert result.engine == "python"
+        expected = 'data["run_id"] == ctx["deps"][0]["data"]["run_id"]'
+        assert result.script == expected
+        # Ensure no trailing syntax garbage
+        assert not result.script.endswith(",")
+        assert not result.script.endswith(")")
+        assert not result.script.endswith(";")
+
+    def test_lambda_with_all_operator(self):
+        """Test lambda using all() with nested deps iteration."""
+        processor = BatchProcessor(
+            api_key="test",
+            base_url="http://localhost",
+            batch_size=100,
+            batch_interval=5,
+            max_queue_size=1000,
+        )
+
+        validator = lambda data, ctx: all(
+            dep["data"]["status"] == "approved" for dep in ctx["deps"]
+        )
+        result = processor._serialize_lambda(validator)
+
+        assert result.engine == "python"
+        assert "all(" in result.script
+        assert 'dep["data"]["status"]' in result.script
+        assert 'ctx["deps"]' in result.script
+        # CRITICAL: The closing parenthesis of all() should be included
+        assert result.script.strip().endswith(")")
+
+    def test_multiline_lambda_with_method_call(self):
+        """Test multi-line lambda ending with .get() - this WILL fail!"""
+        processor = BatchProcessor(
+            api_key="test",
+            base_url="http://localhost",
+            batch_size=100,
+            batch_interval=5,
+            max_queue_size=1000,
+        )
+
+        # Multi-line lambda with .get() at the end
+        filter_fn = lambda data, ctx: (
+            data["run_id"] == ctx["deps"][0]["data"].get("run_id", "default")
+        )
+        result = processor._serialize_lambda(filter_fn)
+
+        assert result.engine == "python"
+        # The FULL expression must be captured including the closing )
+        expected = 'data["run_id"] == ctx["deps"][0]["data"].get("run_id", "default")'
+        # This will fail because the serializer cuts off the closing paren/quote
+        assert result.script.strip() == expected.strip(), (
+            f"Expected:\n  {expected}\nGot:\n  {result.script}"
+        )
+        # Make sure we got the full method call including closing paren
+        assert result.script.count("(") == result.script.count(")"), (
+            f"Unbalanced parentheses in: {result.script}"
+        )
+
+    def test_multiline_lambda_with_nested_dict_access(self):
+        """Test multi-line lambda with nested bracket access - this WILL fail!"""
+        processor = BatchProcessor(
+            api_key="test",
+            base_url="http://localhost",
+            batch_size=100,
+            batch_interval=5,
+            max_queue_size=1000,
+        )
+
+        # Multi-line lambda
+        filter_fn = lambda data, ctx: (
+            data["run_id"] == ctx["deps"][0]["data"]["run_id"]
+        )
+        result = processor._serialize_lambda(filter_fn)
+
+        assert result.engine == "python"
+        # Must capture the complete expression
+        expected = 'data["run_id"] == ctx["deps"][0]["data"]["run_id"]'
+        # Strip outer parens if present (acceptable) but content must be complete
+        cleaned = result.script.strip().strip("()")
+        assert 'run_id"]' in result.script, (
+            f"Missing closing bracket and quote! Got: {result.script}"
+        )
+        assert cleaned.count("[") == cleaned.count("]"), (
+            f"Unbalanced brackets in: {result.script}"
+        )

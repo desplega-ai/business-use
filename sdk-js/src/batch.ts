@@ -369,63 +369,53 @@ export class BatchProcessor {
         // Remove trailing semicolon
         body = body.replace(/;$/, '');
 
-        // Smart removal of trailing syntax (comma, parenthesis) that are part of function call
-        // Track nesting level to avoid removing syntax that's part of the expression
-        let nestingLevel = 0;
-        let lastSignificantChar = body.length - 1;
-        inString = false;
-        stringChar = null;
+        // Strip outer parentheses if they wrap the entire expression
+        // This handles multi-line arrows: (data) => (expr) -> we want just "expr"
+        if (body.startsWith('(') && body.endsWith(')')) {
+          // Check if these parens wrap the entire expression by tracking depth
+          let depth = 0;
+          inString = false;
+          stringChar = null;
+          let wrapsEntire = true;
 
-        // Walk backwards through the body
-        for (let i = body.length - 1; i >= 0; i--) {
-          const char = body[i];
+          for (let i = 0; i < body.length; i++) {
+            const char = body[i];
 
-          // Track string literals (going backwards)
-          if ((char === '"' || char === "'" || char === '`') && (i === 0 || body[i - 1] !== '\\')) {
-            if (!inString) {
-              inString = true;
-              stringChar = char;
-            } else if (char === stringChar) {
-              inString = false;
-              stringChar = null;
+            // Track string literals
+            if (
+              (char === '"' || char === "'" || char === '`') &&
+              (i === 0 || body[i - 1] !== '\\')
+            ) {
+              if (!inString) {
+                inString = true;
+                stringChar = char;
+              } else if (char === stringChar) {
+                inString = false;
+                stringChar = null;
+              }
+              continue;
+            }
+
+            if (inString) {
+              continue;
+            }
+
+            // Track parentheses depth
+            if (char === '(') {
+              depth++;
+            } else if (char === ')') {
+              depth--;
+              // If depth hits 0 before the last character, parens don't wrap entire expression
+              if (depth === 0 && i < body.length - 1) {
+                wrapsEntire = false;
+                break;
+              }
             }
           }
 
-          if (inString) {
-            continue;
-          }
-
-          // Track closing delimiters (increase nesting when going backwards)
-          if (char && ')]}}>'.includes(char)) {
-            nestingLevel++;
-          } else if (char && '([{<'.includes(char)) {
-            nestingLevel--;
-          }
-
-          // If we're at nesting level 0 and hit a comma, that's likely the end
-          // of the lambda argument in the function call
-          if (nestingLevel === 0 && char === ',') {
-            lastSignificantChar = i - 1;
-            break;
-          }
-
-          // If nesting level goes negative, we've gone too far
-          if (nestingLevel < 0) {
-            lastSignificantChar = i - 1;
-            break;
-          }
-        }
-
-        // Extract the actual body
-        body = body.substring(0, lastSignificantChar + 1).trim();
-
-        // Final cleanup: remove trailing syntax characters that aren't part of the expression
-        while (body.length > 0) {
-          const lastChar = body[body.length - 1];
-          if (lastChar && ',);'.includes(lastChar)) {
-            body = body.substring(0, body.length - 1).trim();
-          } else {
-            break;
+          // If parens wrap the entire expression, remove them
+          if (wrapsEntire && depth === 0) {
+            body = body.substring(1, body.length - 1).trim();
           }
         }
 

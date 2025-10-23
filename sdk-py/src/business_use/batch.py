@@ -251,7 +251,6 @@ class BatchProcessor:
             # Handle lambda expressions
             if "lambda" in source:
                 # Find the lambda keyword and extract everything after the colon
-                # For multi-line lambdas, we need to find the matching parenthesis/comma
                 lambda_start = source.find("lambda")
                 if lambda_start == -1:
                     return Expr(engine="python", script=source)
@@ -261,6 +260,7 @@ class BatchProcessor:
                 colon_index = -1
                 paren_depth = 0
                 bracket_depth = 0
+                brace_depth = 0
                 in_string = False
                 string_char = None
 
@@ -289,9 +289,18 @@ class BatchProcessor:
                         bracket_depth += 1
                     elif char == "]":
                         bracket_depth -= 1
+                    elif char == "{":
+                        brace_depth += 1
+                    elif char == "}":
+                        brace_depth -= 1
 
                     # The lambda's colon is at depth 0
-                    if char == ":" and paren_depth == 0 and bracket_depth == 0:
+                    if (
+                        char == ":"
+                        and paren_depth == 0
+                        and bracket_depth == 0
+                        and brace_depth == 0
+                    ):
                         colon_index = i
                         break
 
@@ -301,17 +310,113 @@ class BatchProcessor:
                 # Extract everything after the colon
                 body = source[colon_index + 1 :].strip()
 
-                # Now find where the lambda body ends by tracking nesting levels
-                # Walk backwards to find the true end of the lambda expression
-                nesting_level = 0
-                last_significant_char = len(body) - 1
+                # NEW APPROACH: Parse forward to find where the lambda expression ends
+                # Track nesting and stop at: comma at depth 0, or unmatched closing delimiter
+                paren_depth = 0
+                bracket_depth = 0
+                brace_depth = 0
                 in_string = False
                 string_char = None
+                end_index = len(body)
 
-                for i in range(len(body) - 1, -1, -1):
+                for i in range(len(body)):
                     char = body[i]
 
-                    # Track strings (going backwards)
+                    # Track string literals
+                    if char in "\"'" and (i == 0 or body[i - 1] != "\\"):
+                        if not in_string:
+                            in_string = True
+                            string_char = char
+                        elif char == string_char:
+                            in_string = False
+                            string_char = None
+                        continue
+
+                    if in_string:
+                        continue
+
+                    # Track nesting depth
+                    if char == "(":
+                        paren_depth += 1
+                    elif char == ")":
+                        paren_depth -= 1
+                        # If we go negative, this closing paren is NOT part of the lambda
+                        if paren_depth < 0:
+                            end_index = i
+                            break
+                    elif char == "[":
+                        bracket_depth += 1
+                    elif char == "]":
+                        bracket_depth -= 1
+                        if bracket_depth < 0:
+                            end_index = i
+                            break
+                    elif char == "{":
+                        brace_depth += 1
+                    elif char == "}":
+                        brace_depth -= 1
+                        if brace_depth < 0:
+                            end_index = i
+                            break
+                    # At depth 0, comma or newline likely ends the lambda argument
+                    elif paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
+                        if char == ",":
+                            end_index = i
+                            break
+
+                # Extract the lambda body up to the end
+                body = body[:end_index].strip()
+
+                # Clean up formatting: strip outer parens if they wrap the entire expression
+                # This handles cases like: lambda x: (expr) -> we want just "expr"
+                if body.startswith("(") and body.endswith(")"):
+                    # Check if these parens wrap the entire expression
+                    paren_depth = 0
+                    in_string = False
+                    string_char = None
+                    wraps_entire = True
+
+                    for i in range(len(body)):
+                        char = body[i]
+
+                        if char in "\"'" and (i == 0 or body[i - 1] != "\\"):
+                            if not in_string:
+                                in_string = True
+                                string_char = char
+                            elif char == string_char:
+                                in_string = False
+                                string_char = None
+                            continue
+
+                        if in_string:
+                            continue
+
+                        if char == "(":
+                            paren_depth += 1
+                        elif char == ")":
+                            paren_depth -= 1
+                            # If depth hits 0 before the last char, parens don't wrap entire expr
+                            if paren_depth == 0 and i < len(body) - 1:
+                                wraps_entire = False
+                                break
+
+                    if wraps_entire:
+                        body = body[1:-1].strip()
+
+                # Normalize whitespace: collapse multi-line expressions to single line
+                # Replace all sequences of whitespace (including newlines) with appropriate spacing
+                # but preserve whitespace inside strings
+                normalized = []
+                in_string = False
+                string_char = None
+                prev_was_space = False
+
+                # Characters that don't need space before/after them
+                no_space_before = set(".,;:)]}")
+                no_space_after = set("([{")
+
+                for i, char in enumerate(body):
+                    # Track string literals
                     if char in "\"'" and (i == 0 or body[i - 1] != "\\"):
                         if not in_string:
                             in_string = True
@@ -321,30 +426,43 @@ class BatchProcessor:
                             string_char = None
 
                     if in_string:
-                        continue
+                        # Inside strings, preserve all whitespace
+                        normalized.append(char)
+                        prev_was_space = False
+                    elif char.isspace():
+                        # Outside strings, collapse all whitespace to single space
+                        # But check if we actually need the space
+                        if not prev_was_space and normalized:
+                            # Check what comes before and after
+                            prev_char = normalized[-1] if normalized else ""
+                            # Look ahead to find next non-whitespace char
+                            next_char = ""
+                            for j in range(i + 1, len(body)):
+                                if not body[j].isspace():
+                                    next_char = body[j]
+                                    break
 
-                    # Track closing delimiters (increase nesting when going backwards)
-                    if char in ")]}>":
-                        nesting_level += 1
-                    elif char in "([{<":
-                        nesting_level -= 1
+                            # Add space only if needed (not before/after certain punctuation)
+                            need_space = True
+                            if (
+                                prev_char in no_space_after
+                                or next_char in no_space_before
+                            ):
+                                need_space = False
 
-                    # At nesting level 0, a comma likely ends the lambda argument
-                    if nesting_level == 0 and char == ",":
-                        last_significant_char = i - 1
-                        break
+                            if need_space:
+                                normalized.append(" ")
+                                prev_was_space = True
+                            else:
+                                prev_was_space = (
+                                    True  # Mark as processed space but don't add
+                                )
+                    else:
+                        # Regular character
+                        normalized.append(char)
+                        prev_was_space = False
 
-                    # If nesting goes negative, we've hit an opening delimiter
-                    if nesting_level < 0:
-                        last_significant_char = i - 1
-                        break
-
-                # Extract the actual lambda body
-                body = body[: last_significant_char + 1].strip()
-
-                # Final cleanup: remove trailing syntax characters
-                while body and body[-1] in ",);":
-                    body = body[:-1].strip()
+                body = "".join(normalized).strip()
 
                 return Expr(engine="python", script=body)
 

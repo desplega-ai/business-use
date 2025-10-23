@@ -66,54 +66,51 @@ function serializeFunction(fn: Function): { engine: string; script: string } {
     // Remove trailing semicolon
     body = body.replace(/;$/, '');
 
-    // Smart removal of trailing syntax (comma, parenthesis) that are part of function call
-    let nestingLevel = 0;
-    let lastSignificantChar = body.length - 1;
-    inString = false;
-    stringChar = null;
+    // Strip outer parentheses if they wrap the entire expression
+    // This handles multi-line arrows: (data) => (expr) -> we want just "expr"
+    if (body.startsWith('(') && body.endsWith(')')) {
+      // Check if these parens wrap the entire expression by tracking depth
+      let depth = 0;
+      inString = false;
+      stringChar = null;
+      let wrapsEntire = true;
 
-    for (let i = body.length - 1; i >= 0; i--) {
-      const char = body[i];
+      for (let i = 0; i < body.length; i++) {
+        const char = body[i];
 
-      // Track string literals (going backwards)
-      if (
-        (char === '"' || char === "'" || char === '`') &&
-        (i === 0 || body[i - 1] !== '\\')
-      ) {
-        if (!inString) {
-          inString = true;
-          stringChar = char;
-        } else if (char === stringChar) {
-          inString = false;
-          stringChar = null;
+        // Track string literals
+        if ((char === '"' || char === "'" || char === '`') && (i === 0 || body[i - 1] !== '\\')) {
+          if (!inString) {
+            inString = true;
+            stringChar = char;
+          } else if (char === stringChar) {
+            inString = false;
+            stringChar = null;
+          }
+          continue;
+        }
+
+        if (inString) {
+          continue;
+        }
+
+        // Track parentheses depth
+        if (char === '(') {
+          depth++;
+        } else if (char === ')') {
+          depth--;
+          // If depth hits 0 before the last character, parens don't wrap entire expression
+          if (depth === 0 && i < body.length - 1) {
+            wrapsEntire = false;
+            break;
+          }
         }
       }
 
-      if (inString) {
-        continue;
+      // If parens wrap the entire expression, remove them
+      if (wrapsEntire && depth === 0) {
+        body = body.substring(1, body.length - 1).trim();
       }
-
-      if (')]}}>'.includes(char)) {
-        nestingLevel++;
-      } else if ('([{<'.includes(char)) {
-        nestingLevel--;
-      }
-
-      if (nestingLevel === 0 && char === ',') {
-        lastSignificantChar = i - 1;
-        break;
-      }
-
-      if (nestingLevel < 0) {
-        lastSignificantChar = i - 1;
-        break;
-      }
-    }
-
-    body = body.substring(0, lastSignificantChar + 1).trim();
-
-    while (body.length > 0 && ',);'.includes(body[body.length - 1])) {
-      body = body.substring(0, body.length - 1).trim();
     }
 
     return { engine: 'js', script: body };
@@ -263,5 +260,70 @@ describe('Function Serialization', () => {
     expect(result.script).toContain('key=>with=>arrows');
     expect(result.script).toContain('value=>also=>arrows');
     expect(result.script).toContain('data.status');
+  });
+
+  it('should serialize arrow function with nested bracket access', () => {
+    // CRITICAL TEST: This is the exact pattern that was failing in Python SDK
+    // Accessing nested array indices with bracket notation
+    // Pattern: ctx.deps[0].data.run_id
+    const fn = (data: any, ctx: any) =>
+      data.run_id === ctx.deps[0].data.run_id;
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    // Must capture the ENTIRE expression including nested bracket access
+    expect(result.script).toBe('data.run_id === ctx.deps[0].data.run_id');
+    // Verify we didn't cut off early
+    expect(result.script).toContain('ctx.deps[0].data.run_id');
+    // Verify balanced brackets
+    const openBrackets = (result.script.match(/\[/g) || []).length;
+    const closeBrackets = (result.script.match(/\]/g) || []).length;
+    expect(openBrackets).toBe(closeBrackets);
+  });
+
+  it('should serialize multi-line arrow function with nested bracket access', () => {
+    // Test the multi-line version with parentheses wrapping the expression
+    const fn = (data: any, ctx: any) => (
+      data.run_id === ctx.deps[0].data.run_id
+    );
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    // Should capture complete expression
+    expect(result.script).toBe('data.run_id === ctx.deps[0].data.run_id');
+    // Verify we got the full nested access
+    expect(result.script).toContain('ctx.deps[0].data.run_id');
+  });
+
+  it('should serialize arrow function with multiple nested bracket accesses', () => {
+    // Complex case with multiple nested accesses
+    const fn = (data: any, ctx: any) =>
+      data.items[0].price === ctx.deps[0].data.items[1].price;
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    expect(result.script).toContain('data.items[0].price');
+    expect(result.script).toContain('ctx.deps[0].data.items[1].price');
+    // Verify balanced brackets
+    const openBrackets = (result.script.match(/\[/g) || []).length;
+    const closeBrackets = (result.script.match(/\]/g) || []).length;
+    expect(openBrackets).toBe(closeBrackets);
+  });
+
+  it('should serialize arrow function with nested bracket access and method call', () => {
+    // Test combining bracket access with method calls
+    const fn = (data: any, ctx: any) =>
+      data.run_id === ctx.deps[0].data.get('run_id', '');
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    expect(result.script).toContain('ctx.deps[0].data.get(');
+    // Note: .toString() may convert quotes, so check for either single or double
+    expect(result.script).toMatch(/["']run_id["']/);
+    expect(result.script).toMatch(/["']run_id["'],\s*["']["']/);  // Empty string arg
+    // Verify balanced delimiters
+    const openParen = (result.script.match(/\(/g) || []).length;
+    const closeParen = (result.script.match(/\)/g) || []).length;
+    expect(openParen).toBe(closeParen);
   });
 });
