@@ -8,6 +8,10 @@ Business-Use is a lightweight framework for ensuring your critical business work
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Node.js 18+](https://img.shields.io/badge/node-18+-green.svg)](https://nodejs.org/)
 
+
+https://github.com/user-attachments/assets/e80ae1d0-062e-4f6a-8af7-d72798c0c486
+
+
 ## Why Business-Use?
 
 Traditional monitoring tells you *what* happened. Business-Use tells you if it happened *correctly*.
