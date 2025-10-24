@@ -13,3 +13,36 @@ body {
   min-width: 320px;
   min-height: 100vh;
 }
+
+/* Subtle glow animation for selected nodes */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 8px rgba(147, 51, 234, 0.4),
+      0 0 16px rgba(147, 51, 234, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 12px rgba(147, 51, 234, 0.6),
+      0 0 24px rgba(147, 51, 234, 0.3);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Moving dashed line animation for running edges */
+@keyframes dash-flow {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -16;
+  }
+}
+
+.animated-dash {
+  animation: dash-flow 1s linear infinite;
+}

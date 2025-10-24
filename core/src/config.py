@@ -8,19 +8,33 @@ import yaml
 log = logging.getLogger(__name__)
 
 
-def load_config() -> dict[str, Any]:
+def load_config(config_path: str | None = None) -> dict[str, Any]:
     """Load configuration from YAML file with fallback chain.
 
     Priority:
-    1. ./.business-use/config.yaml (project-level, highest priority)
+    0. Explicit config_path argument (highest priority)
+    1. ./.business-use/config.yaml (project-level)
     2. ./config.yaml (legacy support, will be deprecated)
     3. ~/.business-use/config.yaml (global fallback)
     4. Defaults
+
+    Args:
+        config_path: Optional explicit path to config file
 
     Returns:
         Configuration dictionary with all settings
     """
     config_data: dict[str, Any] = {}
+
+    # Priority 0: Explicit config path from CLI --config flag
+    if config_path:
+        config_file = Path(config_path)
+        if not config_file.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+        with open(config_file) as f:
+            config_data = yaml.safe_load(f) or {}
+        log.info(f"Loaded configuration from: {config_path} (--config flag)")
+        return config_data
 
     # Priority 1: Project-level workspace config
     project_config = Path(".business-use") / "config.yaml"
@@ -76,7 +90,9 @@ def get_env_or_config(env_key: str, config_key: str, default: Any = None) -> Any
 
 
 # Load configuration
-_config = load_config()
+# Check for BUSINESS_USE_CONFIG_PATH env var (set by CLI --config flag)
+_config_path_override = os.environ.get("BUSINESS_USE_CONFIG_PATH")
+_config = load_config(_config_path_override)
 
 # Determine if we're in development mode (project config or legacy config exists)
 _is_dev = (Path(".business-use") / "config.yaml").exists() or Path(

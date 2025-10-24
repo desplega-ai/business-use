@@ -1,10 +1,11 @@
-.PHONY: format lint check install dev migrate serve prod help
+.PHONY: format lint check test install dev migrate serve prod help
 
 help:
 	@echo "Available commands:"
 	@echo "  make format    - Format code with ruff"
 	@echo "  make lint      - Lint code with ruff"
 	@echo "  make check     - Run format check and lint (CI-friendly)"
+	@echo "  make test      - Run tests with pytest"
 	@echo "  make install   - Install dependencies"
 	@echo "  make dev       - Install dependencies including dev tools"
 	@echo "  make migrate   - Run database migrations"
@@ -29,6 +30,10 @@ check:
 	uv run ruff check .
 	@echo "Running type check..."
 	uv run mypy .
+
+test:
+	@echo "Running tests with pytest..."
+	uv run pytest tests/ -v
 
 install:
 	@echo "Installing dependencies..."

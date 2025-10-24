@@ -34,24 +34,27 @@ interface CustomNodeData {
   node: Node;
   isSelected: boolean;
   isHighlighted: boolean;
+  isDimmed: boolean;
 }
 
 function CustomNode({ data }: { data: CustomNodeData }) {
   const colors = nodeTypeColors[data.node.type as NodeType] || nodeTypeColors.generic;
   const isSelected = data.isSelected;
   const isHighlighted = data.isHighlighted;
+  const isDimmed = data.isDimmed;
 
   return (
     <>
       <Handle type="target" position={Position.Left} className="!bg-gray-400" />
       <div
-        className={`px-4 py-3 rounded-lg border-2 min-w-[180px] cursor-pointer transition-all ${
+        className={`px-4 py-3 rounded-lg min-w-[180px] cursor-pointer transition-all ${colors.bg} ${
           isSelected
-            ? "bg-purple-100 border-purple-600 shadow-lg"
+            ? `border-4 ${colors.border} shadow-lg animate-pulse-glow`
             : isHighlighted
-              ? "bg-purple-50 border-purple-400 shadow-md"
-              : `${colors.bg} ${colors.border}`
+              ? `border-2 ${colors.border} shadow-md`
+              : `border-2 ${colors.border}`
         }`}
+        style={{ opacity: isDimmed ? 0.3 : 1 }}
       >
         <div className="flex flex-col gap-1">
           <div className={`text-xs font-semibold uppercase ${colors.text}`}>{data.node.type}</div>
@@ -79,11 +82,12 @@ function GraphContent({ nodes, selectedNode, onNodeClick, evalInfo }: GraphViewP
     dagreGraph.setDefaultEdgeLabel(() => ({}));
     dagreGraph.setGraph({
       rankdir: "LR",
-      nodesep: 150,
-      ranksep: 250,
-      edgesep: 50,
-      marginx: 50,
-      marginy: 50,
+      nodesep: 200, // Increased spacing between nodes at same rank
+      ranksep: 300, // Increased spacing between ranks
+      edgesep: 100, // Increased edge separation to reduce collisions
+      marginx: 80, // Increased margins
+      marginy: 80,
+      ranker: "network-simplex", // Better ranking algorithm
     });
 
     const nodeWidth = 220;
@@ -142,6 +146,7 @@ function GraphContent({ nodes, selectedNode, onNodeClick, evalInfo }: GraphViewP
       const nodeWithPosition = dagreGraph.node(node.id);
       const isInFlow = connectedNodeIds.has(node.id);
       const isSelected = selectedNode?.id === node.id;
+      const isDimmed = selectedNode !== null && !isInFlow;
 
       return {
         id: node.id,
@@ -154,6 +159,7 @@ function GraphContent({ nodes, selectedNode, onNodeClick, evalInfo }: GraphViewP
           node,
           isSelected,
           isHighlighted: isInFlow && !isSelected,
+          isDimmed,
         },
       };
     });
@@ -167,6 +173,7 @@ function GraphContent({ nodes, selectedNode, onNodeClick, evalInfo }: GraphViewP
           // Determine edge status from evaluation info
           let edgeColor = isEdgeInFlow ? "#7c3aed" : "#94a3b8"; // default purple or gray
           let edgeStyle: React.CSSProperties["strokeDasharray"] = undefined;
+          let edgeClassName = "";
 
           if (evalInfo && evalInfo.length > 0) {
             // Find the eval info for the target node
@@ -186,6 +193,8 @@ function GraphContent({ nodes, selectedNode, onNodeClick, evalInfo }: GraphViewP
                     break;
                   case "running":
                     edgeColor = "#3b82f6"; // blue-500
+                    edgeStyle = "8 8"; // dashed for animation
+                    edgeClassName = "animated-dash";
                     break;
                   case "pending":
                   case "skipped":
@@ -206,12 +215,15 @@ function GraphContent({ nodes, selectedNode, onNodeClick, evalInfo }: GraphViewP
             }
           }
 
+          const edgeOpacity = selectedNode !== null && !isEdgeInFlow ? 0.2 : 1;
+
           flowEdges.push({
             id: `${depId}-${node.id}`,
             source: depId,
             target: node.id,
-            type: "smoothstep",
+            type: "default", // Changed to default for bezier curves
             animated: isEdgeInFlow && !evalInfo, // Only animate when no eval info (normal highlighting mode)
+            className: edgeClassName,
             markerEnd: {
               type: "arrowclosed",
               width: 20,
@@ -222,6 +234,7 @@ function GraphContent({ nodes, selectedNode, onNodeClick, evalInfo }: GraphViewP
               stroke: edgeColor,
               strokeWidth: isEdgeInFlow || evalInfo ? 2.5 : 2,
               strokeDasharray: edgeStyle,
+              opacity: edgeOpacity,
             },
           });
         }

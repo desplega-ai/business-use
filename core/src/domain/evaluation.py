@@ -190,21 +190,6 @@ def validate_flow_execution(
 
             current_node.ensure()
 
-            # Early skip if previous failed
-            if overall_status == "failed":
-                items.append(
-                    ValidationItem(
-                        node_id=node_id,
-                        dep_node_ids=current_node.dep_ids or [],
-                        message="Skipped due to previous failure",
-                        status="skipped",
-                        elapsed_ns=0,
-                        ev_ids=layer_ev_ids,
-                        upstream_ev_ids=[],
-                    )
-                )
-                continue
-
             item_start = time_ns()
 
             # Get current layer events for this node

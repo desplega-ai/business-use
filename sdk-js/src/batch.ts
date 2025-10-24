@@ -432,16 +432,15 @@ export class BatchProcessor {
   }
 
   /**
-   * Get current timestamp in nanoseconds.
+   * Get current timestamp in nanoseconds (Unix epoch).
    *
-   * Uses process.hrtime.bigint() if available (Node.js),
-   * otherwise falls back to Date.now() * 1_000_000
+   * Returns Unix epoch time in nanoseconds (milliseconds * 1_000_000).
+   * Matches Python SDK's time.time_ns() behavior.
    */
   private _getTimestampNs(): number {
-    if (typeof process !== 'undefined' && process.hrtime && process.hrtime.bigint) {
-      return Number(process.hrtime.bigint());
-    }
-    // Fallback for browsers: milliseconds to nanoseconds
+    // Use Date.now() for Unix epoch consistency across Node.js and browsers
+    // Date.now() returns milliseconds since Unix epoch (Jan 1, 1970)
+    // Convert to nanoseconds: ms * 1_000_000
     return Date.now() * 1_000_000;
   }
 }

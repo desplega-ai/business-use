@@ -165,9 +165,18 @@ def ensure_workspace_or_exit() -> Path:
 
 
 @click.group()
-def cli() -> None:
+@click.option(
+    "--config",
+    type=click.Path(exists=True),
+    help="Path to config file (overrides default search paths)",
+)
+def cli(config: str | None) -> None:
     """Business-Use CLI - Database management and utilities."""
-    pass
+    # Set config path in environment so it's picked up by config.py
+    if config:
+        import os
+
+        os.environ["BUSINESS_USE_CONFIG_PATH"] = config
 
 
 @cli.command()
@@ -380,26 +389,35 @@ def config() -> None:
     click.secho("⚙️  Business-Use Configuration", fg="cyan", bold=True)
     click.echo()
 
-    # Find config file (check all locations)
-    project_config = Path(".business-use") / "config.yaml"
-    local_config = Path("./config.yaml")
-    user_config = Path.home() / ".business-use" / "config.yaml"
+    # Check for --config flag override first
+    import os
 
-    if project_config.exists():
-        config_path = project_config
-    elif local_config.exists():
-        config_path = local_config
-        click.secho("⚠️  Using legacy config at ./config.yaml", fg="yellow")
-        click.echo("Consider moving to .business-use/config.yaml")
+    config_override = os.getenv("BUSINESS_USE_CONFIG_PATH")
+    if config_override:
+        config_path = Path(config_override)
+        click.secho("📍 Using config from --config flag", fg="cyan")
         click.echo()
-    elif user_config.exists():
-        config_path = user_config
     else:
-        click.secho("✗ No configuration found!", fg="red", bold=True)
-        click.echo()
-        click.echo("Run first-time setup with:")
-        click.secho("  business-use init", fg="cyan", bold=True)
-        raise click.Abort()
+        # Find config file (check all locations)
+        project_config = Path(".business-use") / "config.yaml"
+        local_config = Path("./config.yaml")
+        user_config = Path.home() / ".business-use" / "config.yaml"
+
+        if project_config.exists():
+            config_path = project_config
+        elif local_config.exists():
+            config_path = local_config
+            click.secho("⚠️  Using legacy config at ./config.yaml", fg="yellow")
+            click.echo("Consider moving to .business-use/config.yaml")
+            click.echo()
+        elif user_config.exists():
+            config_path = user_config
+        else:
+            click.secho("✗ No configuration found!", fg="red", bold=True)
+            click.echo()
+            click.echo("Run first-time setup with:")
+            click.secho("  business-use init", fg="cyan", bold=True)
+            raise click.Abort()
 
     # Load current config
     with open(config_path) as f:
@@ -409,7 +427,7 @@ def config() -> None:
     while True:
         click.clear()
         click.secho("⚙️  Business-Use Configuration", fg="cyan", bold=True)
-        click.echo(f"Config file: {config_path}")
+        click.echo(f"Config file: {config_path.absolute()}")
         click.echo()
 
         # Display current config

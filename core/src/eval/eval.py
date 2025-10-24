@@ -10,6 +10,7 @@ be reused with different storage backends and evaluators at desplega.ai.
 """
 
 import logging
+from typing import Any
 
 from src.adapters.sqlite import SqliteEventStorage
 from src.db.transactional import transactional
@@ -19,10 +20,44 @@ from src.domain.graph import (
     filter_subgraph_from_node,
     topological_sort_layers,
 )
+from src.execution.js_eval import JSEvaluator
 from src.execution.python_eval import PythonEvaluator
-from src.models import BaseEvalOutput
+from src.models import BaseEvalOutput, Expr
 
 logger = logging.getLogger(__name__)
+
+
+class MultiEvaluator:
+    """Router that dispatches expressions to appropriate evaluators based on engine type.
+
+    This allows mixing Python and JavaScript expressions in the same flow.
+    """
+
+    def __init__(self) -> None:
+        self.python_evaluator = PythonEvaluator()
+        self.js_evaluator = JSEvaluator()
+
+    def evaluate(self, expr: Expr, data: dict[str, Any], ctx: dict[str, Any]) -> bool:
+        """Evaluate an expression using the appropriate evaluator based on engine type.
+
+        Args:
+            expr: Expression to evaluate
+            data: Target data (current event data)
+            ctx: Context data (typically upstream event data)
+
+        Returns:
+            bool: Result of evaluation, False if error or unknown engine
+        """
+        if expr.engine == "python":
+            return self.python_evaluator.evaluate(expr, data, ctx)
+        elif expr.engine == "js":
+            return self.js_evaluator.evaluate(expr, data, ctx)
+        else:
+            logger.error(
+                f"Unknown expression engine: {expr.engine}. "
+                f"Supported engines: python, js"
+            )
+            return False
 
 
 async def eval_flow_run(
@@ -84,7 +119,7 @@ async def eval_flow_run(
     logger.info(f"Graph has {len(layers)} layers and {len(events)} raw events")
 
     # 5. Match events to layers (domain + execution layers)
-    evaluator = PythonEvaluator()
+    evaluator = MultiEvaluator()
     matched = match_events_to_layers(
         events=events,
         layers=layers,

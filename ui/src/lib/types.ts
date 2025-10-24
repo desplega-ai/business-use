@@ -31,9 +31,9 @@ export interface Node {
   validator?: Expr | null;
   conditions?: NodeCondition[];
   status: string;
-  created_at: string;
-  updated_at?: string | null;
-  deleted_at?: string | null;
+  created_at: string | number; // ISO string or microseconds
+  updated_at?: string | number | null; // ISO string or microseconds
+  deleted_at?: string | number | null; // ISO string or microseconds
 }
 
 export interface Event {
@@ -43,7 +43,7 @@ export interface Event {
   flow: string;
   node_id: string;
   data: Record<string, unknown>;
-  ts: number;
+  ts: number; // Microseconds since epoch
 }
 
 export interface BaseEvalItemOutput {
@@ -69,7 +69,7 @@ export interface EvalOutput {
   id: string;
   flow: string;
   output: BaseEvalOutput;
-  created_at: string;
+  created_at: string | number; // ISO string or microseconds
 }
 
 export interface ApiConfig {

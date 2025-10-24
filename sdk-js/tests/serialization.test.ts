@@ -326,4 +326,41 @@ describe('Function Serialization', () => {
     const closeParen = (result.script.match(/\)/g) || []).length;
     expect(openParen).toBe(closeParen);
   });
+
+  it('should serialize arrow function with block containing comments and return', () => {
+    // CRITICAL TEST: Multi-line block with comments before return statement
+    // This is a regression test for the case where comments precede the return
+    const fn = (data: any, ctx: any) => {
+      // Business Rule: Cart cannot be empty and must have positive total
+      return data.item_count > 0 && data.total > 0;
+    };
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    // Should strip the return statement
+    expect(result.script).not.toContain('return');
+    // Should preserve the logical expression
+    expect(result.script).toContain('data.item_count > 0');
+    expect(result.script).toContain('data.total > 0');
+    expect(result.script).toContain('&&');
+    // Comments might be preserved or stripped depending on JS engine
+    // Don't assert on comments as .toString() behavior varies
+  });
+
+  it('should serialize arrow function with multi-line comment block', () => {
+    // Test arrow function with JSDoc-style comment
+    const fn = (data: any) => {
+      /**
+       * Validate that the cart is not empty
+       * and has a positive total
+       */
+      return data.item_count > 0 && data.total > 0;
+    };
+    const result = serializeFunction(fn);
+
+    expect(result.engine).toBe('js');
+    // Should contain the logic
+    expect(result.script).toContain('data.item_count');
+    expect(result.script).toContain('data.total');
+  });
 });

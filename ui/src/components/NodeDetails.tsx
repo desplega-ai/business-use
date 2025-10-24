@@ -215,13 +215,23 @@ export function NodeDetails({ node, onEvalInfoChange, onNodeSelect, allNodes }: 
 
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Created At</h3>
-                <p className="mt-1 text-sm">{new Date(node.created_at).toLocaleString()}</p>
+                <p className="mt-1 text-sm">
+                  {new Date(
+                    typeof node.created_at === "number" ? node.created_at / 1_000 : node.created_at
+                  ).toLocaleString()}
+                </p>
               </div>
 
               {node.updated_at && (
                 <div>
                   <h3 className="text-sm font-medium text-gray-500">Updated At</h3>
-                  <p className="mt-1 text-sm">{new Date(node.updated_at).toLocaleString()}</p>
+                  <p className="mt-1 text-sm">
+                    {new Date(
+                      typeof node.updated_at === "number"
+                        ? node.updated_at / 1_000
+                        : node.updated_at
+                    ).toLocaleString()}
+                  </p>
                 </div>
               )}
 
@@ -298,7 +308,7 @@ export function NodeDetails({ node, onEvalInfoChange, onNodeSelect, allNodes }: 
                               </Badge>
                             </TableCell>
                             <TableCell className="text-xs">
-                              {new Date(event.ts / 1_000_000).toLocaleString()}
+                              {new Date(event.ts / 1_000).toLocaleString()}
                               {usedInRuns > 0 && (
                                 <div className="text-xs text-purple-600 mt-1">
                                   Used in {usedInRuns} run{usedInRuns > 1 ? "s" : ""}
@@ -443,7 +453,11 @@ export function NodeDetails({ node, onEvalInfoChange, onNodeSelect, allNodes }: 
                                   <div className="grid grid-cols-2 gap-4 text-xs">
                                     <div>
                                       <span className="font-medium text-gray-500">Created: </span>
-                                      {new Date(output.created_at).toLocaleString()}
+                                      {new Date(
+                                        typeof output.created_at === "number"
+                                          ? output.created_at / 1_000
+                                          : output.created_at
+                                      ).toLocaleString()}
                                     </div>
                                     <div>
                                       <span className="font-medium text-gray-500">
@@ -466,30 +480,33 @@ export function NodeDetails({ node, onEvalInfoChange, onNodeSelect, allNodes }: 
                                         return (
                                           <Card
                                             key={idx}
-                                            className={`${
+                                            className={`transition-all ${
                                               isNodeSelected
                                                 ? "ring-2 ring-purple-400 shadow-md shadow-purple-200"
                                                 : ""
+                                            } ${
+                                              nodeForInfo && onNodeSelect
+                                                ? "cursor-pointer hover:shadow-md hover:border-purple-300"
+                                                : ""
                                             }`}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (nodeForInfo && onNodeSelect) {
+                                                onNodeSelect(nodeForInfo);
+                                              }
+                                            }}
                                           >
                                             <CardContent className="p-3 space-y-2">
                                               <div className="flex items-start justify-between">
-                                                <button
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    if (nodeForInfo && onNodeSelect) {
-                                                      onNodeSelect(nodeForInfo);
-                                                    }
-                                                  }}
+                                                <span
                                                   className={`font-mono text-xs font-medium ${
                                                     nodeForInfo && onNodeSelect
-                                                      ? "text-purple-600 hover:text-purple-800 cursor-pointer"
+                                                      ? "text-purple-600"
                                                       : "text-gray-900"
                                                   }`}
-                                                  disabled={!nodeForInfo || !onNodeSelect}
                                                 >
                                                   {info.node_id}
-                                                </button>
+                                                </span>
                                                 <div className="flex items-center gap-2">
                                                   <Badge variant={getStatusVariant(info.status)}>
                                                     {info.status}
