@@ -175,6 +175,8 @@ cd ui && pnpm install && pnpm dev
 # Open http://localhost:5173
 ```
 
+Or you can use the automatic deployed version at [business-use.com](https://business-use.com).
+
 ## Examples
 
 See the [`examples/`](./examples/) directory for complete examples:
