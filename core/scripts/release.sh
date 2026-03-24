@@ -56,7 +56,7 @@ fi
 
 # Update version in files
 echo -e "${GREEN}Updating version in pyproject.toml...${NC}"
-sed -i.bak "s/version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+sed -i.bak '3s/version = ".*"/version = "'"$NEW_VERSION"'"/' pyproject.toml
 rm pyproject.toml.bak
 
 # Run checks
