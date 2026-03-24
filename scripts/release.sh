@@ -93,11 +93,12 @@ update_pyproject_version() {
     local file=$1
     local new_version=$2
 
-    # macOS compatible sed (works on both Linux and macOS)
+    # macOS sed doesn't support 0,/pattern/ — use simple global replace
+    # (safe because pyproject.toml has only one top-level version = line)
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "0,/^version = /s/^version = \".*\"/version = \"$new_version\"/" "$file"
+        sed -i '' "s/^version = \".*\"/version = \"$new_version\"/" "$file"
     else
-        sed -i "0,/^version = /s/^version = \".*\"/version = \"$new_version\"/" "$file"
+        sed -i "s/^version = \".*\"/version = \"$new_version\"/" "$file"
     fi
 }
 
