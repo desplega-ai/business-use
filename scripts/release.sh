@@ -160,8 +160,14 @@ release_package() {
 
     success "Updated version in $version_file"
 
-    # Create git commit
+    # Stage version file and lock file (if it changed)
     git add "$version_file"
+    local lock_dir=$(dirname "$version_file")
+    if [[ $version_file == *.toml ]] && [[ -f "$lock_dir/uv.lock" ]]; then
+        git add "$lock_dir/uv.lock"
+    elif [[ $version_file == *.json ]] && [[ -f "$lock_dir/pnpm-lock.yaml" ]]; then
+        git add "$lock_dir/pnpm-lock.yaml"
+    fi
     git commit -m "chore($package): release v$new_version"
     success "Created commit for $package v$new_version"
 
