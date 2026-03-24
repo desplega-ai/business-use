@@ -78,6 +78,14 @@ ActionType = Literal[
 ]
 
 
+ExprEngine = Literal["python", "js", "cel"]
+
+
+class Expr(BaseModel):
+    engine: ExprEngine
+    script: str
+
+
 class ActionInputParams(BaseModel):
     url: str | None = None
     method: Literal["GET", "POST", "PUT", "DELETE", "PATCH"] | None = None
@@ -141,14 +149,6 @@ class NodeCondition(BaseModel):
     timeout_ms: int | None = Field(
         default=None,
     )
-
-
-ExprEngine = Literal["python", "js", "cel"]
-
-
-class Expr(BaseModel):
-    engine: ExprEngine
-    script: str
 
 
 class Node(AuditBase, table=True):
