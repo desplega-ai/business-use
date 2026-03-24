@@ -10,6 +10,7 @@ import questionary
 from alembic import command
 from alembic.config import Config as AlembicConfig
 
+from src import __version__
 from src.config import API_KEY, DATABASE_PATH
 from src.logging import configure_logging
 
@@ -165,6 +166,7 @@ def ensure_workspace_or_exit() -> Path:
 
 
 @click.group()
+@click.version_option(version=__version__, prog_name="business-use")
 @click.option(
     "--config",
     type=click.Path(exists=True),
