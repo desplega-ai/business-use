@@ -3,19 +3,30 @@
 # Release script for business-use monorepo
 #
 # Usage:
-#   ./scripts/release.sh <package> <bump_type>
+#   ./scripts/release.sh [-y] <package> <bump_type>
 #
 # Arguments:
+#   -y         - Skip confirmation prompt
 #   package    - Which package to release: core, sdk-py, sdk-js, or all
 #   bump_type  - Version bump: patch, minor, or major
 #
 # Examples:
 #   ./scripts/release.sh core patch
-#   ./scripts/release.sh sdk-py minor
+#   ./scripts/release.sh -y core patch
 #   ./scripts/release.sh all patch
 #
 
 set -e  # Exit on error
+
+# Parse flags
+SKIP_CONFIRM=false
+while getopts "y" opt; do
+    case $opt in
+        y) SKIP_CONFIRM=true ;;
+        *) ;;
+    esac
+done
+shift $((OPTIND - 1))
 
 # Colors for output
 RED='\033[0;31m'
@@ -205,19 +216,21 @@ main() {
     info "Current branch: $current_branch"
 
     # Confirm release
-    echo ""
-    warning "This will:"
-    echo "  1. Bump version ($bump_type)"
-    echo "  2. Create commit(s)"
-    echo "  3. Create git tag(s)"
-    echo "  4. Push to remote"
-    echo ""
-    read -p "Continue? (y/n) " -n 1 -r
-    echo ""
+    if [ "$SKIP_CONFIRM" = false ]; then
+        echo ""
+        warning "This will:"
+        echo "  1. Bump version ($bump_type)"
+        echo "  2. Create commit(s)"
+        echo "  3. Create git tag(s)"
+        echo "  4. Push to remote"
+        echo ""
+        read -p "Continue? (y/n) " -n 1 -r
+        echo ""
 
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        warning "Release cancelled"
-        exit 0
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            warning "Release cancelled"
+            exit 0
+        fi
     fi
 
     echo ""
