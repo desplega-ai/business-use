@@ -1,0 +1,17 @@
+__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+dist/
+tests/
+scripts/
+*.md
+!README.md
+.git
+.gitignore
+Makefile
+vercel.json
+config.yaml
+.business-use/

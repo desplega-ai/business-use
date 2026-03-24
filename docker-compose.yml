@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: ./core
+    restart: unless-stopped
+    ports:
+      - "13370:13370"
+    environment:
+      - BUSINESS_USE_API_KEY=${BUSINESS_USE_API_KEY}
+      - BUSINESS_USE_DATABASE_PATH=/data/db.sqlite
+      - BUSINESS_USE_LOG_LEVEL=${BUSINESS_USE_LOG_LEVEL:-info}
+      - WORKERS=${WORKERS:-4}
+    volumes:
+      - bu-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:13370/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  bu-data:
