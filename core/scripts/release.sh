@@ -71,17 +71,17 @@ uv run mypy src/
 
 # Build package
 echo -e "${GREEN}Building package...${NC}"
-uv pip install --system build twine
-python -m build
+rm -rf dist/
+uv build
 
 # Check package
 echo -e "${GREEN}Checking package...${NC}"
-twine check dist/*
+uvx twine check dist/*
 
 # Publish to PyPI
 echo -e "${GREEN}Publishing to PyPI...${NC}"
 echo -e "${YELLOW}Note: Make sure you have PyPI credentials configured${NC}"
-twine upload dist/*
+uvx twine upload dist/*
 
 # Create git tag
 echo -e "${GREEN}Creating git tag...${NC}"
