@@ -30,6 +30,7 @@ from src.db.transactional import transactional
 from src.events.handlers import new_bus
 from src.events.models import NewBatchEvent
 from src.models import (
+    BaseEvalOutput,
     EvalOutput,
     Event,
     Node,
@@ -571,7 +572,7 @@ app.add_middleware(
 app.include_router(router)
 
 
-@app.get("/")
+@app.get("/", response_model=RootResponse)
 async def root():
     start = time.monotonic()
     return {
@@ -585,6 +586,6 @@ async def root():
     }
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health():
-    return SuccessResponse(message="API is healthy")
+    return {"status": "ok", "version": __version__}
