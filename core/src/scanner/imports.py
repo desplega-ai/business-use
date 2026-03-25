@@ -22,13 +22,13 @@ def _get_string_value(node: Node) -> str | None:
     """Extract string value from a string node (handles quotes)."""
     if node.type == "string":
         for child in node.children:
-            if child.type == "string_fragment":
+            if child.type == "string_fragment" and child.text is not None:
                 return child.text.decode("utf-8")
         return ""
     if node.type == "template_string":
         fragments = [c for c in node.children if c.type == "string_fragment"]
         substitutions = [c for c in node.children if c.type == "template_substitution"]
-        if not substitutions and fragments:
+        if not substitutions and fragments and fragments[0].text is not None:
             return fragments[0].text.decode("utf-8")
     return None
 
@@ -65,10 +65,10 @@ def extract_imports(root: Node) -> ImportInfo:
             if child.type == "import_specifier":
                 name_node = child.child_by_field_name("name")
                 alias_node = child.child_by_field_name("alias")
-                if name_node:
+                if name_node and name_node.text is not None:
                     original = name_node.text.decode("utf-8")
                     if original in TARGET_FUNCTIONS:
-                        if alias_node:
+                        if alias_node and alias_node.text is not None:
                             local = alias_node.text.decode("utf-8")
                             result.aliases[local] = original
                         else:
@@ -76,7 +76,7 @@ def extract_imports(root: Node) -> ImportInfo:
 
             if child.type == "namespace_import":
                 for c in child.children:
-                    if c.type == "identifier":
+                    if c.type == "identifier" and c.text is not None:
                         result.namespace = c.text.decode("utf-8")
 
     return result

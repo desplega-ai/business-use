@@ -1,5 +1,7 @@
 """API client for pushing scan results to the backend."""
 
+from typing import Any
+
 import httpx
 
 from src.scanner.models import ScanResult
@@ -9,9 +11,9 @@ class ScanPushError(Exception):
     """Error pushing scan results to the API."""
 
 
-def _build_payload(result: ScanResult) -> dict:
+def _build_payload(result: ScanResult) -> dict[str, Any]:
     """Convert ScanResult to the ScanUploadPayload JSON format."""
-    flows: dict[str, list[dict]] = {}
+    flows: dict[str, list[dict[str, Any]]] = {}
     for flow_name, nodes in result.flows.items():
         flows[flow_name] = [
             {
@@ -43,7 +45,7 @@ def push_scan_result(
     url: str,
     api_key: str,
     timeout: float = 30.0,
-) -> dict:
+) -> dict[str, Any]:
     """Push scan results to the backend API.
 
     Returns:
@@ -79,4 +81,5 @@ def push_scan_result(
     if response.status_code >= 400:
         raise ScanPushError(f"Client error ({response.status_code}): {response.text}")
 
-    return response.json()
+    resp_data: dict[str, Any] = response.json()
+    return resp_data

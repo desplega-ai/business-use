@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.scanner.imports import (
     TARGET_FUNCTIONS,
@@ -28,7 +28,7 @@ def _is_target_call(node: Node, imports: ImportInfo) -> str | None:
         return None
 
     # Direct call: ensure({...})
-    if fn_node.type == "identifier":
+    if fn_node.type == "identifier" and fn_node.text is not None:
         name = fn_node.text.decode("utf-8")
         if name in imports.named:
             return name
@@ -46,17 +46,17 @@ def _is_target_call(node: Node, imports: ImportInfo) -> str | None:
             and obj.type == "identifier"
             and prop.type == "property_identifier"
         ):
-            obj_name = obj.text.decode("utf-8")
-            prop_name = prop.text.decode("utf-8")
+            obj_name = obj.text.decode("utf-8") if obj.text else ""
+            prop_name = prop.text.decode("utf-8") if prop.text else ""
             if obj_name == imports.namespace and prop_name in TARGET_FUNCTIONS:
                 return prop_name
 
     return None
 
 
-def _extract_object_props(obj_node: Node) -> dict:
+def _extract_object_props(obj_node: Node) -> dict[str, Any]:
     """Extract properties from an object literal argument."""
-    result: dict = {
+    result: dict[str, Any] = {
         "id": None,
         "flow": None,
         "dep_ids": [],
@@ -76,7 +76,7 @@ def _extract_object_props(obj_node: Node) -> dict:
         if not key_node or not value_node:
             continue
 
-        key = key_node.text.decode("utf-8")
+        key = key_node.text.decode("utf-8") if key_node.text else ""
 
         if key == "id":
             val = _get_string_value(value_node)
@@ -108,8 +108,9 @@ def _extract_object_props(obj_node: Node) -> dict:
                                 "depIds contains non-extractable element"
                             )
                     elif elem.type == "identifier":
+                        elem_text = elem.text.decode() if elem.text else "?"
                         result["warnings"].append(
-                            f"depIds contains variable '{elem.text.decode()}'"
+                            f"depIds contains variable '{elem_text}'"
                         )
                     elif elem.type == "spread_element":
                         result["warnings"].append("depIds contains spread element")
@@ -138,7 +139,7 @@ def _extract_object_props(obj_node: Node) -> dict:
                                 pk = pair.child_by_field_name("key")
                                 pv = pair.child_by_field_name("value")
                                 if pk and pv and pk.text == b"timeout_ms":
-                                    if pv.type == "number":
+                                    if pv.type == "number" and pv.text is not None:
                                         result["conditions"].append(
                                             {"timeout_ms": int(pv.text.decode())}
                                         )
