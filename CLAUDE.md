@@ -260,6 +260,9 @@ All config values can be set via environment variables:
 - `BUSINESS_USE_LOG_LEVEL` - Logging level
 - `BUSINESS_USE_ENV` - Environment name
 - `BUSINESS_USE_DEBUG` - Enable debug mode
+- `BUSINESS_USE_SLACK_WEBHOOK_URL` - Slack webhook URL for failure notifications
+- `SENTRY_DSN` - Sentry DSN for error tracking (requires `[notifications]` extra)
+- `BUSINESS_USE_NOTIFY_THROTTLE_SECONDS` - Throttle seconds between notifications (default: 0)
 
 **Getting started:**
 

@@ -27,6 +27,17 @@ debug: false
 # Environment name (e.g., local, dev, staging, prod)
 env: "local"
 
+# --- Notification settings (optional) ---
+
+# Slack incoming webhook URL for failure notifications
+# slack_webhook_url: "https://hooks.slack.com/services/T.../B.../xxx"
+
+# Sentry DSN for error tracking (requires: pip install business-use-core[notifications])
+# sentry_dsn: "https://xxx@o123.ingest.sentry.io/456"
+
+# Minimum seconds between notifications for the same (flow, status) pair (0 = disabled)
+# notify_throttle_seconds: 60
+
 # Environment Variable Overrides (higher priority than YAML):
 # BUSINESS_USE_API_KEY
 # BUSINESS_USE_DATABASE_URL
@@ -34,3 +45,6 @@ env: "local"
 # BUSINESS_USE_LOG_LEVEL
 # BUSINESS_USE_ENV
 # BUSINESS_USE_DEBUG
+# BUSINESS_USE_SLACK_WEBHOOK_URL
+# SENTRY_DSN
+# BUSINESS_USE_NOTIFY_THROTTLE_SECONDS
