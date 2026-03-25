@@ -3,13 +3,18 @@
 from src.config import NOTIFY_THROTTLE_SECONDS, SENTRY_DSN, SLACK_WEBHOOK_URL
 from src.notifications.dispatcher import NotificationDispatcher
 
+_dispatcher: NotificationDispatcher | None = None
+
 
 def build_dispatcher() -> NotificationDispatcher:
     """Build a NotificationDispatcher with configured notifiers.
 
     Reads config constants and registers any notifiers whose credentials
-    are present. Returns a ready-to-use dispatcher.
+    are present. Stores the result as a module-level singleton accessible
+    via ``get_dispatcher()``.
     """
+    global _dispatcher
+
     dispatcher = NotificationDispatcher(throttle_seconds=NOTIFY_THROTTLE_SECONDS)
 
     if SLACK_WEBHOOK_URL:
@@ -22,4 +27,12 @@ def build_dispatcher() -> NotificationDispatcher:
 
         dispatcher.register(SentryNotifier())
 
+    _dispatcher = dispatcher
     return dispatcher
+
+
+def get_dispatcher() -> NotificationDispatcher:
+    """Return the singleton dispatcher, or an empty no-op dispatcher if not initialised."""
+    if _dispatcher is None:
+        return NotificationDispatcher()
+    return _dispatcher

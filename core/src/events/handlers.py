@@ -7,6 +7,7 @@ from sqlmodel import select
 from src.db.transactional import transactional
 from src.events.models import NewBatchEvent, NewEvent
 from src.models import EvalOutput, Event
+from src.notifications import get_dispatcher
 from src.utils.time import now
 
 log = logging.getLogger(__name__)
@@ -76,6 +77,10 @@ async def handle_new_batch_event(ev: NewBatchEvent) -> None:
                 f"Evaluation completed for run_id={run_id}, flow={flow}: "
                 f"status={eval_result.status}"
             )
+
+            if eval_result.status == "failed":
+                dispatcher = get_dispatcher()
+                await dispatcher.dispatch(flow=flow, run_id=run_id, result=eval_result)
 
         except Exception as e:
             log.exception(f"Failed to evaluate run_id={run_id}, flow={flow}: {e}")

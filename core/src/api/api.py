@@ -35,6 +35,7 @@ from src.models import (
     Event,
     Node,
 )
+from src.notifications import build_dispatcher, get_dispatcher
 from src.utils.time import now
 
 # Suppress Pydantic serialization warnings for dict-stored JSON fields
@@ -244,6 +245,10 @@ async def run_eval(
         session.add(eval_output)
         await session.commit()
 
+    if result.status == "failed":
+        dispatcher = get_dispatcher()
+        await dispatcher.dispatch(flow=body.flow, run_id=body.run_id, result=result)
+
     return result
 
 
@@ -252,10 +257,11 @@ async def reeval_running_flows(
     _: Annotated[None, Depends(ensure_api_key)],
     max_age_seconds: int = 86400,  # 24 hours default
 ):
-    """Re-evaluate flows stuck in 'running' state.
+    """Re-evaluate flows in 'running' or 'failed' state.
 
     This endpoint should be called periodically by an external cron job (every 30s recommended).
-    It re-evaluates recent EvalOutputs with status='running' to check if timeouts have expired.
+    It re-evaluates recent EvalOutputs with status='running' or 'failed' to check if timeouts
+    have expired or if previously failed flows have recovered.
 
     Args:
         max_age_seconds: Only check evaluations created within this time window (default: 24 hours)
@@ -274,11 +280,11 @@ async def reeval_running_flows(
     cutoff_time = datetime.utcnow() - timedelta(seconds=max_age_seconds)
 
     async with transactional() as session:
-        # Find recent EvalOutputs with running status
+        # Find recent EvalOutputs with running or failed status
         stmt = (
             select(EvalOutput)
             .where(
-                EvalOutput.output["status"].astext == "running",  # type: ignore
+                EvalOutput.output["status"].astext.in_(["running", "failed"]),  # type: ignore
                 EvalOutput.created_at >= cutoff_time,
             )
             .order_by(desc(EvalOutput.created_at))  # type: ignore
@@ -314,6 +320,22 @@ async def reeval_running_flows(
                         f"{old_status} → {new_result.status}"
                     )
                     updated_count += 1
+
+                    # Dispatch notifications for relevant transitions
+                    dispatcher = get_dispatcher()
+                    if old_status == "failed" and new_result.status == "passed":
+                        await dispatcher.dispatch(
+                            flow=eval_output.flow,
+                            run_id=eval_output.run_id,
+                            result=new_result,
+                            transition="failed->passed",
+                        )
+                    elif new_result.status == "failed" and old_status != "failed":
+                        await dispatcher.dispatch(
+                            flow=eval_output.flow,
+                            run_id=eval_output.run_id,
+                            result=new_result,
+                        )
                 else:
                     still_running_count += 1
 
@@ -542,6 +564,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[AppState]:
             log.info("Sentry SDK initialized")
         except ImportError:
             log.warning("SENTRY_DSN configured but sentry-sdk not installed")
+
+    build_dispatcher()
 
     yield {
         "bus": new_bus(),

@@ -242,9 +242,7 @@ class SlackNotifier:
             )
 
         if response.status_code == 429:
-            logger.warning(
-                "Slack webhook rate-limited (429): %s", response.text
-            )
+            logger.warning("Slack webhook rate-limited (429): %s", response.text)
         elif response.status_code >= 400:
             logger.warning(
                 "Slack webhook returned %d: %s",
