@@ -2114,6 +2114,184 @@ def scan(
     )
 
 
+@cli.group()
+def notify() -> None:
+    """Notification configuration and testing commands."""
+    pass
+
+
+@notify.command()
+def status() -> None:
+    """Show which notification channels are configured.
+
+    Examples:
+
+        business-use notify status
+    """
+    from src.config import NOTIFY_THROTTLE_SECONDS, SENTRY_DSN, SLACK_WEBHOOK_URL
+
+    click.echo()
+    click.secho("Notification Configuration:", bold=True)
+    click.echo()
+
+    # Slack
+    if SLACK_WEBHOOK_URL:
+        # Mask the webhook URL: show domain + first segment
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(SLACK_WEBHOOK_URL)
+            path_parts = parsed.path.strip("/").split("/")
+            masked_path = "/".join(
+                p[:4] + "***" if len(p) > 4 else p for p in path_parts[:3]
+            )
+            masked = f"{parsed.scheme}://{parsed.hostname}/{masked_path}"
+        except Exception:
+            masked = "***configured***"
+        click.echo(f"  Slack:    {click.style('✓ Configured', fg='green')} ({masked})")
+    else:
+        click.echo(
+            f"  Slack:    {click.style('✗ Not configured', fg='yellow')}"
+            " (set BUSINESS_USE_SLACK_WEBHOOK_URL or slack_webhook_url in config)"
+        )
+
+    # Sentry
+    if SENTRY_DSN:
+        click.echo(f"  Sentry:   {click.style('✓ Configured', fg='green')}")
+    else:
+        click.echo(
+            f"  Sentry:   {click.style('✗ Not configured', fg='yellow')}"
+            " (set SENTRY_DSN or sentry_dsn in config)"
+        )
+
+    # Throttle
+    if NOTIFY_THROTTLE_SECONDS > 0:
+        click.echo(f"  Throttle: {NOTIFY_THROTTLE_SECONDS}s per (flow, status) pair")
+    else:
+        click.echo("  Throttle: disabled")
+
+    click.echo()
+
+
+@notify.command()
+@click.option(
+    "--flow",
+    "flow_name",
+    default="test-notification",
+    help="Flow name to use in the test notification",
+)
+@click.option("--slack-only", is_flag=True, help="Only test Slack")
+@click.option("--sentry-only", is_flag=True, help="Only test Sentry")
+def test(flow_name: str, slack_only: bool, sentry_only: bool) -> None:
+    """Send a test notification to verify configured channels.
+
+    Examples:
+
+        business-use notify test
+
+        business-use notify test --flow checkout
+
+        business-use notify test --slack-only
+    """
+    from src.config import SENTRY_DSN, SLACK_WEBHOOK_URL
+    from src.models import BaseEvalItemOutput, BaseEvalOutput
+
+    synthetic_result = BaseEvalOutput(
+        status="failed",
+        elapsed_ns=1_500_000_000,
+        graph={"test_step_a": ["test_step_b"], "test_step_b": []},
+        exec_info=[
+            BaseEvalItemOutput(
+                node_id="test_step_a",
+                dep_node_ids=[],
+                status="passed",
+                message="Test node passed",
+                elapsed_ns=500_000_000,
+            ),
+            BaseEvalItemOutput(
+                node_id="test_step_b",
+                dep_node_ids=["test_step_a"],
+                status="failed",
+                message="Test node failed (synthetic)",
+                elapsed_ns=1_000_000_000,
+            ),
+        ],
+    )
+
+    run_id = f"test-{secrets.token_hex(4)}"
+    any_configured = False
+
+    click.echo()
+    click.secho("Sending test notifications...", bold=True)
+    click.echo()
+
+    # Test Slack
+    if not sentry_only:
+        if SLACK_WEBHOOK_URL:
+            any_configured = True
+            try:
+                from src.notifications.slack import SlackNotifier
+
+                notifier = SlackNotifier(SLACK_WEBHOOK_URL)
+                asyncio.run(
+                    notifier.notify(
+                        flow=flow_name,
+                        run_id=run_id,
+                        result=synthetic_result,
+                    )
+                )
+                click.echo(
+                    f"  Slack:  {click.style('✓ Sent successfully', fg='green')}"
+                )
+            except Exception as e:
+                click.echo(f"  Slack:  {click.style(f'✗ Failed: {e}', fg='red')}")
+        elif not slack_only:
+            click.echo(
+                f"  Slack:  {click.style('⊘ Skipped (not configured)', fg='yellow')}"
+            )
+        else:
+            click.secho("Error: Slack is not configured.", fg="red", err=True)
+            raise SystemExit(1)
+
+    # Test Sentry
+    if not slack_only:
+        if SENTRY_DSN:
+            any_configured = True
+            try:
+                from src.notifications.sentry import SentryNotifier
+
+                sentry_notifier = SentryNotifier()
+                asyncio.run(
+                    sentry_notifier.notify(
+                        flow=flow_name,
+                        run_id=run_id,
+                        result=synthetic_result,
+                    )
+                )
+                click.echo(
+                    f"  Sentry: {click.style('✓ Sent successfully', fg='green')}"
+                )
+            except Exception as e:
+                click.echo(f"  Sentry: {click.style(f'✗ Failed: {e}', fg='red')}")
+        elif not sentry_only:
+            click.echo(
+                f"  Sentry: {click.style('⊘ Skipped (not configured)', fg='yellow')}"
+            )
+        else:
+            click.secho("Error: Sentry is not configured.", fg="red", err=True)
+            raise SystemExit(1)
+
+    if not any_configured and not slack_only and not sentry_only:
+        click.echo()
+        click.secho(
+            "No notification channels configured. "
+            "Run 'business-use notify status' for setup instructions.",
+            fg="yellow",
+        )
+
+    click.echo()
+
+
 def main() -> None:
     """Entry point for the CLI."""
     log.info("CLI is running")

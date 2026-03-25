@@ -95,9 +95,7 @@ class TestBuildDispatcher:
         types = {type(n) for n in dispatcher.notifiers}
         assert types == {SlackNotifier, SentryNotifier}
 
-    def test_throttle_seconds_forwarded(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_throttle_seconds_forwarded(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """NOTIFY_THROTTLE_SECONDS is passed to the dispatcher constructor."""
         monkeypatch.setattr(src.notifications, "SLACK_WEBHOOK_URL", None)
         monkeypatch.setattr(src.notifications, "SENTRY_DSN", None)

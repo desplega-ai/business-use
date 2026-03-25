@@ -395,6 +395,63 @@ uv run cli db migrate -1
 
 ---
 
+### `notify status` - Show Notification Configuration
+
+Display which notification channels are configured and their settings.
+
+**Syntax:**
+```bash
+uv run business-use notify status
+```
+
+**Output:**
+```
+Notification Configuration:
+
+  Slack:    ✓ Configured (https://hooks.slack.com/serv***/B***/xxx***)
+  Sentry:   ✗ Not configured (set SENTRY_DSN or sentry_dsn in config)
+  Throttle: 60s per (flow, status) pair
+```
+
+---
+
+### `notify test` - Send Test Notification
+
+Send a test notification to verify configured channels work end-to-end.
+
+**Syntax:**
+```bash
+uv run business-use notify test [OPTIONS]
+```
+
+**Options:**
+- `--flow TEXT` - Flow name to use in the test notification (default: `test-notification`)
+- `--slack-only` - Only test Slack
+- `--sentry-only` - Only test Sentry
+
+**Examples:**
+
+```bash
+# Test all configured channels
+uv run business-use notify test
+
+# Test with a custom flow name
+uv run business-use notify test --flow checkout
+
+# Test only Slack
+uv run business-use notify test --slack-only
+```
+
+**Output:**
+```
+Sending test notifications...
+
+  Slack:  ✓ Sent successfully
+  Sentry: ⊘ Skipped (not configured)
+```
+
+---
+
 ## Common Workflows
 
 ### Exploring Flows
@@ -472,8 +529,9 @@ echo "✅ All runs validated successfully"
 6. **Pipe to `jq` for filtering** - `... --json-output | jq '.status'`
 7. **Check exit codes in scripts** - `$?` will be 0 on success, 1 on error
 8. **Interactive selection** - Omit flow name to get an interactive list
+9. **Test notifications** - Use `notify status` to check config, `notify test` to verify delivery
 
 ---
 
-**Version:** 1.0
-**Last Updated:** 2025-01-21
+**Version:** 1.1
+**Last Updated:** 2026-03-26

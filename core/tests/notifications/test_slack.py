@@ -50,7 +50,9 @@ class TestSlackPayloadConstruction:
         notifier = SlackNotifier(webhook_url="https://hooks.slack.com/test")
         result = _make_result(status="failed")
 
-        payload = notifier._build_payload("checkout", "run_001", result, transition=None)
+        payload = notifier._build_payload(
+            "checkout", "run_001", result, transition=None
+        )
 
         # Check attachment color
         assert payload["attachments"][0]["color"] == "danger"
@@ -88,7 +90,9 @@ class TestSlackPayloadConstruction:
         notifier = SlackNotifier(webhook_url="https://hooks.slack.com/test")
         result = _make_result(status="running")
 
-        payload = notifier._build_payload("checkout", "run_003", result, transition=None)
+        payload = notifier._build_payload(
+            "checkout", "run_003", result, transition=None
+        )
         assert payload["attachments"][0]["color"] == "warning"
 
     def test_duration_formatting(self) -> None:

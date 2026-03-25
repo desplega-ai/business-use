@@ -54,6 +54,7 @@ Business-Use automatically validates:
 - **🔧 Type-Safe**: Full TypeScript support with automatic type inference
 - **🚀 Production Ready**: Used in production, handles high-throughput workloads
 - **⏱️ Time-Aware Polling**: Smart timeout handling with live progress updates
+- **📬 Failure Alerts**: Automatic Slack/Sentry notifications on flow failures and recovery
 
 ## Quick Start
 

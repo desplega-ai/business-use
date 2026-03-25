@@ -123,6 +123,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+notifications = [
+    { name = "sentry-sdk" },
+]
 scan = [
     { name = "tree-sitter" },
     { name = "tree-sitter-javascript" },
@@ -155,13 +158,14 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "questionary", specifier = ">=2.1.0" },
     { name = "quickjs", specifier = ">=1.19.2" },
+    { name = "sentry-sdk", marker = "extra == 'notifications'", specifier = ">=2.0.0" },
     { name = "sqlmodel", specifier = ">=0.0.27" },
     { name = "tree-sitter", marker = "extra == 'scan'", specifier = ">=0.25.0" },
     { name = "tree-sitter-javascript", marker = "extra == 'scan'", specifier = ">=0.25.0" },
     { name = "tree-sitter-typescript", marker = "extra == 'scan'", specifier = ">=0.23.0" },
     { name = "uuid", specifier = ">=1.30" },
 ]
-provides-extras = ["scan"]
+provides-extras = ["scan", "notifications"]
 
 [package.metadata.requires-dev]
 dev = [

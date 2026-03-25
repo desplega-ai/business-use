@@ -235,6 +235,9 @@ docker run -p 8000:8000 \
 | `BUSINESS_USE_LOG_LEVEL` | No | `info` | Logging level |
 | `BUSINESS_USE_ENV` | No | `production` | Environment name |
 | `BUSINESS_USE_DEBUG` | No | `false` | Enable debug mode |
+| `BUSINESS_USE_SLACK_WEBHOOK_URL` | No | - | Slack webhook URL for failure alerts |
+| `SENTRY_DSN` | No | - | Sentry DSN for error tracking (requires `[notifications]` extra) |
+| `BUSINESS_USE_NOTIFY_THROTTLE_SECONDS` | No | `0` | Min seconds between notifications per (flow, status) pair |
 
 ## Best Practices
 
@@ -245,6 +248,17 @@ docker run -p 8000:8000 \
 5. **Set appropriate timeouts** for long-running flow evaluations
 6. **Monitor cold starts** and consider keeping functions warm
 7. **Use API keys** from environment, never commit to code
+8. **Set up notifications** for production to get alerted on flow failures
+
+### Notifications Setup
+
+**Slack**: Create an [Incoming Webhook](https://api.slack.com/messaging/webhooks) in your Slack workspace and set `BUSINESS_USE_SLACK_WEBHOOK_URL`.
+
+**Sentry**: Create a Sentry project, copy the DSN, and set `SENTRY_DSN`. Install the extra: `pip install business-use-core[notifications]`.
+
+**Throttling**: Set `BUSINESS_USE_NOTIFY_THROTTLE_SECONDS=60` to avoid alert fatigue (limits notifications per flow/status pair).
+
+Verify with `business-use notify status` and `business-use notify test`.
 
 ## Health Check
 

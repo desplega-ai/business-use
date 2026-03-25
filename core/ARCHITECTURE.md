@@ -42,6 +42,13 @@ core/src/
 ├── adapters/            # Infrastructure adapters
 │   └── sqlite.py        # SQLite storage adapter
 │
+├── notifications/       # Notification adapters
+│   ├── __init__.py      # Factory: build_dispatcher(), get_dispatcher()
+│   ├── protocol.py      # Notifier Protocol
+│   ├── dispatcher.py    # NotificationDispatcher (throttle, error isolation)
+│   ├── slack.py         # SlackNotifier (Block Kit + ASCII graph)
+│   └── sentry.py        # SentryNotifier (guarded import)
+│
 ├── eval/                # Public API & orchestration
 │   ├── __init__.py      # Public exports
 │   └── eval.py          # Orchestrates domain + adapters
@@ -113,6 +120,28 @@ class SqliteEventStorage:
 - Easy migration to PostgreSQL, MongoDB, etc. at desplega.ai
 - Testing domain logic without database
 - Clear separation between business logic and data access
+
+### 5. **Notification Dispatch**
+
+Notifications follow the same adapter pattern as storage — they are infrastructure concerns, not domain logic.
+
+```python
+class Notifier(Protocol):
+    async def notify(self, flow: str, run_id: str, result: BaseEvalOutput,
+                     transition: str | None = None) -> None: ...
+```
+
+**Architecture:**
+- `Notifier` Protocol — pluggable interface (same pattern as `ExprEvaluator`)
+- `NotificationDispatcher` — singleton that fans out to all registered notifiers with error isolation (one notifier failing doesn't affect others) and optional per-`(flow, status)` throttling
+- `build_dispatcher()` / `get_dispatcher()` — factory + singleton access
+
+**Dispatch happens after result persistence** at three call sites:
+1. `POST /v1/run-eval` endpoint (api.py)
+2. `handle_new_batch_event()` handler (events/handlers.py)
+3. `POST /v1/reeval-running-flows` endpoint (api.py) — also detects `failed→passed` transitions
+
+**Why a singleton (not AppState)?** Event handlers lack HTTP request context, so the dispatcher is module-level. Initialized once during FastAPI lifespan startup via `build_dispatcher()`.
 
 ## Key Changes from Legacy Implementation
 

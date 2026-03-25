@@ -136,6 +136,9 @@ All config values can be overridden via environment variables:
 - `BUSINESS_USE_LOG_LEVEL` - Logging level (DEBUG, INFO, WARNING, ERROR)
 - `BUSINESS_USE_ENV` - Environment name (local, dev, staging, prod)
 - `BUSINESS_USE_DEBUG` - Enable debug mode (true/false)
+- `BUSINESS_USE_SLACK_WEBHOOK_URL` - Slack webhook URL for failure notifications
+- `SENTRY_DSN` - Sentry DSN for error tracking (requires `[notifications]` extra)
+- `BUSINESS_USE_NOTIFY_THROTTLE_SECONDS` - Min seconds between notifications per (flow, status) pair (default: 0)
 
 ## Installation from PyPI
 
@@ -148,6 +151,36 @@ uvx business-use-core serve
 pip install business-use-core
 business-use init
 business-use serve
+```
+
+## Notifications (Optional)
+
+Get automatic alerts when flow evaluations fail or recover. Both channels are opt-in — configure one or both:
+
+**Slack** (no extra dependencies):
+```bash
+export BUSINESS_USE_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T.../B.../xxx"
+```
+
+**Sentry** (requires optional extra):
+```bash
+pip install business-use-core[notifications]
+export SENTRY_DSN="https://xxx@o123.ingest.sentry.io/456"
+```
+
+**Throttling** (optional):
+```bash
+export BUSINESS_USE_NOTIFY_THROTTLE_SECONDS=60  # min seconds between alerts per (flow, status)
+```
+
+Notifications fire automatically when:
+- A flow evaluation returns `failed` status
+- A previously failed flow transitions to `passed` (recovery alert)
+
+Verify your setup with the CLI:
+```bash
+business-use notify status   # check which channels are configured
+business-use notify test     # send a test notification
 ```
 
 ## Flow Ensure Command
