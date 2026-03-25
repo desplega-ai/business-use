@@ -86,3 +86,40 @@ class EvalInput(BaseModel):
     run_id: str
     flow: str
     start_node_id: str | None = None
+
+
+# --- Scanner models ---
+
+
+class ScannedNode(BaseModel):
+    """A node extracted by the scanner."""
+
+    id: str
+    flow: str
+    type: Literal["act", "assert"]
+    dep_ids: list[str] = []
+    description: str | None = None
+    conditions: list[NodeCondition] = []
+    has_filter: bool = False
+    has_validator: bool = False
+    source_file: str | None = None
+    source_line: int | None = None
+    source_column: int | None = None
+
+
+class ScanUploadPayload(BaseModel):
+    """Payload from the scanner CLI."""
+
+    version: str = "1.0"
+    scanned_at: str
+    files_scanned: int
+    flows: dict[str, list[ScannedNode]]
+
+
+class ScanUploadResponse(BaseModel):
+    """Response from the scan upload endpoint."""
+
+    created: int
+    updated: int
+    deleted: int
+    flows: list[str]

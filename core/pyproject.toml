@@ -48,12 +48,23 @@ Repository = "https://github.com/desplega-ai/business-use"
 Issues = "https://github.com/desplega-ai/business-use/issues"
 Changelog = "https://github.com/desplega-ai/business-use/releases"
 
+[project.optional-dependencies]
+scan = [
+    "tree-sitter>=0.25.0",
+    "tree-sitter-javascript>=0.25.0",
+    "tree-sitter-typescript>=0.23.0",
+]
+
 [dependency-groups]
 dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
     "types-pyyaml>=6.0.12.20250915",
+    "tree-sitter>=0.25.0",
+    "tree-sitter-javascript>=0.25.0",
+    "tree-sitter-typescript>=0.23.0",
 ]
 
 [build-system]

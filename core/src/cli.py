@@ -1987,6 +1987,133 @@ def validate(path: Path | None) -> None:
         raise click.Abort() from e
 
 
+@cli.command()
+@click.argument("path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--dry-run", is_flag=True, help="Scan and print results without pushing to backend"
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["json", "table"]),
+    default="json",
+    help="Output format for dry-run",
+)
+@click.option("--validate", is_flag=True, help="Run graph validation checks")
+@click.option("--flow", "flow_filter", help="Filter results to a specific flow")
+@click.option("--url", envvar="BUSINESS_USE_URL", help="Backend API URL")
+@click.option("--api-key", envvar="BUSINESS_USE_API_KEY", help="Backend API key")
+def scan(
+    path: Path,
+    dry_run: bool,
+    output_format: str,
+    validate: bool,
+    flow_filter: str | None,
+    url: str | None,
+    api_key: str | None,
+) -> None:
+    """Scan JS/TS source files to extract Business-Use SDK call sites.
+
+    PATH is a file or directory to scan for ensure() calls.
+
+    Examples:
+
+        business-use scan src/ --dry-run
+
+        business-use scan src/ --dry-run --format table
+
+        business-use scan src/ --validate
+
+        business-use scan src/ --dry-run --flow checkout
+    """
+    from src.scanner import scan_directory, scan_files, validate_graph
+    from src.scanner.formatters import format_json, format_table
+
+    target = Path(path)
+
+    if target.is_dir():
+        result = scan_directory(target)
+    else:
+        result = scan_files([target])
+
+    # Apply flow filter
+    if flow_filter:
+        if flow_filter in result.flows:
+            result.flows = {flow_filter: result.flows[flow_filter]}
+        else:
+            result.flows = {}
+
+    if dry_run:
+        if output_format == "table":
+            click.echo(format_table(result))
+        else:
+            click.echo(format_json(result))
+        return
+
+    if validate:
+        validation_warnings = validate_graph(result.flows)
+        all_warnings = result.warnings + validation_warnings
+        if all_warnings:
+            click.secho(
+                f"Validation found {len(all_warnings)} warning(s):", fg="yellow"
+            )
+            for w in all_warnings:
+                loc = f"{w.file}:{w.line}" if w.line is not None else w.file
+                click.echo(f"  \u26a0 {loc} - {w.message}")
+        else:
+            click.secho("Validation passed - no warnings.", fg="green")
+        total_nodes = sum(len(nodes) for nodes in result.flows.values())
+        click.echo(
+            f"Scanned {result.files_scanned} files, "
+            f"found {len(result.flows)} flow(s) with {total_nodes} node(s)."
+        )
+        return
+
+    # Push mode: require url and api_key
+    if not url:
+        click.secho("Error: --url or BUSINESS_USE_URL is required.", fg="red", err=True)
+        raise click.Abort()
+    if not api_key:
+        click.secho(
+            "Error: --api-key or BUSINESS_USE_API_KEY is required.",
+            fg="red",
+            err=True,
+        )
+        raise click.Abort()
+
+    from src.scanner.api_client import ScanPushError, push_scan_result
+
+    # Run validation before push
+    validation_warnings = validate_graph(result.flows)
+    if validation_warnings:
+        click.secho(
+            f"Warning: {len(validation_warnings)} validation warning(s):",
+            fg="yellow",
+        )
+        for w in validation_warnings:
+            loc = f"{w.file}:{w.line}" if w.line is not None else w.file
+            click.echo(f"  \u26a0 {loc} - {w.message}")
+
+    total_nodes = sum(len(nodes) for nodes in result.flows.values())
+    click.echo(
+        f"Pushing {total_nodes} node(s) across {len(result.flows)} flow(s) to {url}..."
+    )
+
+    try:
+        resp = push_scan_result(result, url, api_key)
+    except ScanPushError as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        raise SystemExit(1) from None
+
+    click.secho(
+        f"Pushed {total_nodes} nodes across {len(result.flows)} flow(s) "
+        f"(created: {resp.get('created', 0)}, "
+        f"updated: {resp.get('updated', 0)}, "
+        f"deleted: {resp.get('deleted', 0)})",
+        fg="green",
+    )
+
+
 def main() -> None:
     """Entry point for the CLI."""
     log.info("CLI is running")
