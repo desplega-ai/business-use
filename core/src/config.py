@@ -155,3 +155,16 @@ DATABASE_URL: Final[str] = (
     else f"sqlite+aiosqlite:///{DATABASE_PATH}"
 )
 IS_POSTGRES: Final[bool] = bool(_is_postgres)
+
+# --- Notification settings ---
+SLACK_WEBHOOK_URL: Final[str | None] = get_env_or_config(
+    "BUSINESS_USE_SLACK_WEBHOOK_URL", "slack_webhook_url"
+)
+SENTRY_DSN: Final[str | None] = get_env_or_config(
+    "SENTRY_DSN", "sentry_dsn"
+)
+NOTIFY_THROTTLE_SECONDS: Final[int] = int(
+    get_env_or_config(
+        "BUSINESS_USE_NOTIFY_THROTTLE_SECONDS", "notify_throttle_seconds", "0"
+    )
+)
