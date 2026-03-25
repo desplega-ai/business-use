@@ -283,6 +283,47 @@ Validate ETL workflows:
 data_extracted → data_transformed → data_validated → data_loaded
 ```
 
+## Static Scanner (CI/CD)
+
+Business-Use includes a static scanner that analyzes your JS/TS codebase to extract all `ensure()`, `act()`, `assert()` SDK call sites without runtime execution. This keeps your flow graph up-to-date automatically in CI.
+
+**Install with scanner support:**
+```bash
+pip install 'business-use-core[scan]'
+# or with uvx (no install needed):
+uvx --with 'business-use-core[scan]' business-use-core scan ./src --dry-run
+```
+
+**Usage:**
+```bash
+# Preview extracted nodes (no backend needed)
+business-use scan ./src --dry-run
+business-use scan ./src --dry-run --format table
+
+# Validate graph integrity (broken deps, duplicates, unreachable nodes)
+business-use scan ./src --validate
+
+# Push nodes to backend
+business-use scan ./src --url http://localhost:13370 --api-key <key>
+
+# Filter by flow
+business-use scan ./src --dry-run --flow checkout
+```
+
+**CI/CD Integration:**
+
+See [`scan-ci-example.yaml`](./scan-ci-example.yaml) for a ready-to-use GitHub Action that:
+- Dry-runs + validates on PRs (no secrets needed)
+- Pushes nodes to backend on merge to main
+
+Required secrets: `BUSINESS_USE_URL` and `BUSINESS_USE_API_KEY`.
+
+**Environment variables:**
+```bash
+export BUSINESS_USE_URL="https://bu.example.com"
+export BUSINESS_USE_API_KEY="your-api-key"
+```
+
 ## Documentation
 
 - **[SDK Architecture](./SDK_ARCHITECTURE.md)**: Deep dive into SDK design and batching

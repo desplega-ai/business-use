@@ -1,0 +1,62 @@
+# Example GitHub Action: Scan JS/TS codebase for business-use SDK calls
+#
+# Copy this file to .github/workflows/scan.yaml in your project.
+#
+# Required secrets:
+#   BUSINESS_USE_URL     - Your business-use backend URL (e.g. https://bu.example.com)
+#   BUSINESS_USE_API_KEY - API key for the backend
+#
+# The scanner statically analyzes your JS/TS source code using tree-sitter
+# to extract all ensure(), act(), assert() call sites and pushes them to
+# the backend as nodes with source="scan". This keeps your flow graph
+# up-to-date without runtime execution.
+
+name: Scan SDK Calls
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**/*.ts"
+      - "src/**/*.tsx"
+      - "src/**/*.js"
+      - "src/**/*.jsx"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**/*.ts"
+      - "src/**/*.tsx"
+      - "src/**/*.js"
+      - "src/**/*.jsx"
+
+jobs:
+  scan:
+    name: Extract SDK Nodes
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Dry-run on PRs (no push, just validate)
+      - name: Scan (dry-run)
+        if: github.event_name == 'pull_request'
+        run: >
+          uvx --with 'business-use-core[scan]' business-use-core
+          scan ./src --dry-run --format table
+
+      # Validate graph integrity on PRs
+      - name: Validate graph
+        if: github.event_name == 'pull_request'
+        run: >
+          uvx --with 'business-use-core[scan]' business-use-core
+          scan ./src --validate
+
+      # Push to backend on merge to main
+      - name: Scan and push
+        if: github.event_name == 'push'
+        env:
+          BUSINESS_USE_URL: ${{ secrets.BUSINESS_USE_URL }}
+          BUSINESS_USE_API_KEY: ${{ secrets.BUSINESS_USE_API_KEY }}
+        run: >
+          uvx --with 'business-use-core[scan]' business-use-core
+          scan ./src
