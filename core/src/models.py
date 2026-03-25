@@ -68,6 +68,7 @@ NodeType = Literal[
 NodeSource = Literal[
     "code",
     "manual",
+    "scan",
 ]
 
 ActionType = Literal[

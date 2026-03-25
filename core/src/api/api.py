@@ -17,6 +17,8 @@ from src.api.models import (
     EventBatchItem,
     NodeCreateSchema,
     NodeUpdateSchema,
+    ScanUploadPayload,
+    ScanUploadResponse,
     SuccessResponse,
 )
 from src.db.transactional import transactional
@@ -432,6 +434,86 @@ async def delete_definition(
         await s.merge(md)
 
     return SuccessResponse(message="Node deleted")
+
+
+@router.post("/nodes/scan")
+async def upload_scan(
+    _: Annotated[None, Depends(ensure_api_key)],
+    body: ScanUploadPayload,
+):
+    """Batch upsert nodes from scanner output.
+
+    Accepts the scanner CLI output and upserts nodes with source="scan".
+    Nodes that existed with source="scan" but are no longer in the payload
+    are soft-deleted.
+    """
+    created = 0
+    updated = 0
+    deleted = 0
+
+    async with transactional() as s:
+        # Collect all node IDs from the payload, grouped by flow
+        payload_node_ids_by_flow: dict[str, set[str]] = {}
+
+        for flow_name, scanned_nodes in body.flows.items():
+            payload_node_ids_by_flow[flow_name] = set()
+
+            for body_node in scanned_nodes:
+                payload_node_ids_by_flow[flow_name].add(body_node.id)
+
+                existing_node = await s.get(Node, body_node.id)
+
+                if existing_node:
+                    # Update existing node
+                    existing_node.flow = body_node.flow
+                    existing_node.type = body_node.type
+                    existing_node.source = "scan"
+                    existing_node.description = body_node.description
+                    existing_node.dep_ids = body_node.dep_ids
+                    existing_node.conditions = body_node.conditions
+                    existing_node.updated_at = now()
+                    existing_node.deleted_at = None
+                    await s.merge(existing_node)
+                    updated += 1
+                else:
+                    # Create new node
+                    node = Node(
+                        id=body_node.id,
+                        flow=body_node.flow,
+                        type=body_node.type,
+                        source="scan",
+                        description=body_node.description,
+                        dep_ids=body_node.dep_ids,
+                        conditions=body_node.conditions,
+                        created_at=now(),
+                        status="active",
+                    )
+                    s.add(node)
+                    created += 1
+
+        # Soft-delete stale scan nodes per flow
+        for flow_name, payload_ids in payload_node_ids_by_flow.items():
+            stmt = select(Node).where(
+                Node.flow == flow_name,
+                Node.source == "scan",
+                Node.deleted_at.is_(None),  # type: ignore
+            )
+            result = await s.execute(stmt)
+            existing_scan_nodes = result.scalars().all()
+
+            for node in existing_scan_nodes:
+                if node.id not in payload_ids:
+                    node.deleted_at = now()
+                    node.updated_at = now()
+                    await s.merge(node)
+                    deleted += 1
+
+    return ScanUploadResponse(
+        created=created,
+        updated=updated,
+        deleted=deleted,
+        flows=list(body.flows.keys()),
+    )
 
 
 @asynccontextmanager
