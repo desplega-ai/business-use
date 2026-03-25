@@ -172,10 +172,48 @@ jobs:
       - name: Run E2E tests
         run: bun run e2e/run.ts
 
+  scan-dogfood:
+    name: Dogfood Scan Action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan TypeScript fixtures (dry-run)
+        id: scan-ts
+        uses: ./scan-action
+        with:
+          path: ./e2e/fixtures/typescript
+          mode: dry-run
+          format: json
+
+      - name: Validate TypeScript graph
+        uses: ./scan-action
+        with:
+          path: ./e2e/fixtures/typescript
+          mode: validate
+
+      - name: Verify scan results
+        shell: bash
+        run: |
+          echo "Nodes: ${{ steps.scan-ts.outputs.node-count }}"
+          echo "Flows: ${{ steps.scan-ts.outputs.flow-count }}"
+
+          # 8 nodes = 4 per fixture file (pass_flow.ts + fail_flow.ts), 1 flow (checkout)
+          if [ "${{ steps.scan-ts.outputs.node-count }}" -ne 8 ]; then
+            echo "::error::Expected 8 nodes, got ${{ steps.scan-ts.outputs.node-count }}"
+            exit 1
+          fi
+          if [ "${{ steps.scan-ts.outputs.flow-count }}" -ne 1 ]; then
+            echo "::error::Expected 1 flow, got ${{ steps.scan-ts.outputs.flow-count }}"
+            exit 1
+          fi
+
+          echo "Scan dogfood passed!"
+
   # Summary job that all checks passed
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [check-core, check-sdk-py, check-sdk-js, check-ui, e2e]
+    needs: [check-core, check-sdk-py, check-sdk-js, check-ui, e2e, scan-dogfood]
     steps:
       - run: echo "All formatting, linting, and type checks passed!"
