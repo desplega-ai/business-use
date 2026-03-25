@@ -12,12 +12,35 @@ from src.models import (
 )
 
 
+class RootResponse(BaseModel):
+    name: str
+    version: str
+    status: str
+    latency_ms: float
+    health: str
+    docs: str
+    openapi: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+
+
 class SuccessResponse(BaseModel):
     status: Literal["success"] = "success"
     message: str
     data: dict[str, Any] | None = None  # noqa
     code: int | None = 200
     timestamp: datetime = datetime.now(UTC)
+
+
+class ReEvalResponse(BaseModel):
+    message: str
+    total_running: int
+    updated: int
+    still_running: int
+    failed: int
 
 
 class EventBatchItem(BaseModel):

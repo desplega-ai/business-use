@@ -1,0 +1,9 @@
+[project]
+name = "business-use-e2e-python"
+version = "0.1.0"
+description = "E2E test fixtures for Business-Use Python SDK"
+requires-python = ">=3.11"
+dependencies = ["business-use"]
+
+[tool.uv.sources]
+business-use = { path = "../../../sdk-py" }

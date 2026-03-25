@@ -416,6 +416,14 @@ cd sdk-js
 pnpm test
 ```
 
+### E2E (full pipeline)
+```bash
+# From repo root — requires bun, uv, pnpm, node
+bun run e2e/run.ts
+```
+
+Spins up an isolated server with a temp DB, runs scan + both Python and TypeScript SDK fixtures, and verifies flow evaluations (2 pass, 2 fail). Cleanup is fail-safe (always kills server + removes temp files).
+
 ## Key Design Patterns
 
 ### Domain Layer Purity

@@ -1,4 +1,5 @@
 import logging
+import time
 import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -11,12 +12,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import desc
 from sqlmodel import select
 
+from src import __version__
 from src.api.middlewares import ensure_api_key
 from src.api.models import (
     EvalInput,
     EventBatchItem,
+    HealthResponse,
     NodeCreateSchema,
     NodeUpdateSchema,
+    ReEvalResponse,
+    RootResponse,
     ScanUploadPayload,
     ScanUploadResponse,
     SuccessResponse,
@@ -52,14 +57,14 @@ router = APIRouter(
 )
 
 
-@router.get("/status")
+@router.get("/status", response_model=SuccessResponse)
 async def status(_: Annotated[None, Depends(ensure_api_key)]):
     return SuccessResponse(
         message="ok",
     )
 
 
-@router.get("/eval-outputs")
+@router.get("/eval-outputs", response_model=list[EvalOutput])
 async def get_eval_outputs(
     _: Annotated[None, Depends(ensure_api_key)],
     name: Annotated[list[str] | None, Query()] = None,
@@ -90,7 +95,7 @@ async def get_eval_outputs(
     return outs
 
 
-@router.post("/events-batch")
+@router.post("/events-batch", response_model=SuccessResponse)
 async def persist_events_batch(
     _: Annotated[None, Depends(ensure_api_key)],
     request: Request,
@@ -139,11 +144,19 @@ async def persist_events_batch(
             existing_node = await s.get(Node, node.id)
 
             if existing_node:
-                # Only update SDK-controlled fields for code-defined nodes
-                # Don't overwrite user edits from UI (description, dep_ids, conditions, etc.)
-                if existing_node.source == "code":
+                # SDK events upgrade both "code" and "scan" nodes.
+                # "scan" nodes only have metadata (has_validator bool) — SDK
+                # provides the real serialized validators, so it takes precedence.
+                # Only "manual" (user-edited in UI) nodes are protected.
+                if existing_node.source in ("code", "scan"):
+                    existing_node.source = "code"
+                    existing_node.type = node.type
+                    existing_node.description = node.description
+                    existing_node.dep_ids = node.dep_ids
                     existing_node.validator = node.validator
                     existing_node.filter = node.filter
+                    existing_node.conditions = node.conditions
+                    existing_node.additional_meta = node.additional_meta
                     existing_node.updated_at = now()
                     await s.merge(existing_node)
                 # If source is "manual", don't update - user has edited in UI
@@ -161,7 +174,7 @@ async def persist_events_batch(
     )
 
 
-@router.get("/events")
+@router.get("/events", response_model=list[Event])
 async def get_events(
     _: Annotated[None, Depends(ensure_api_key)],
     flow: str | None = None,
@@ -193,7 +206,7 @@ async def get_events(
     return evs
 
 
-@router.post("/run-eval")
+@router.post("/run-eval", response_model=BaseEvalOutput)
 async def run_eval(
     _: Annotated[None, Depends(ensure_api_key)],
     body: EvalInput,
@@ -233,7 +246,7 @@ async def run_eval(
     return result
 
 
-@router.post("/reeval-running-flows")
+@router.post("/reeval-running-flows", response_model=ReEvalResponse)
 async def reeval_running_flows(
     _: Annotated[None, Depends(ensure_api_key)],
     max_age_seconds: int = 86400,  # 24 hours default
@@ -321,7 +334,7 @@ async def reeval_running_flows(
     }
 
 
-@router.get("/nodes")
+@router.get("/nodes", response_model=list[Node])
 async def get_nodes(_: Annotated[None, Depends(ensure_api_key)]):
     async with transactional() as s:
         defs = await s.execute(
@@ -335,7 +348,7 @@ async def get_nodes(_: Annotated[None, Depends(ensure_api_key)]):
     return defs
 
 
-@router.post("/nodes")
+@router.post("/nodes", response_model=Node)
 async def create_node(
     _: Annotated[None, Depends(ensure_api_key)],
     body: NodeCreateSchema,
@@ -379,7 +392,7 @@ async def create_node(
     return md
 
 
-@router.put("/nodes/{node_id}")
+@router.put("/nodes/{node_id}", response_model=Node)
 async def update_node(
     node_id: str,
     _: Annotated[None, Depends(ensure_api_key)],
@@ -411,7 +424,7 @@ async def update_node(
     return md
 
 
-@router.delete("/nodes/{node_id}")
+@router.delete("/nodes/{node_id}", response_model=SuccessResponse)
 async def delete_definition(
     node_id: str,
     _: Annotated[None, Depends(ensure_api_key)],
@@ -436,7 +449,7 @@ async def delete_definition(
     return SuccessResponse(message="Node deleted")
 
 
-@router.post("/nodes/scan")
+@router.post("/nodes/scan", response_model=ScanUploadResponse)
 async def upload_scan(
     _: Annotated[None, Depends(ensure_api_key)],
     body: ScanUploadPayload,
@@ -525,7 +538,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[AppState]:
     log.info("Ciaito!")
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="business-use",
+    version=__version__,
+    description="Business event flow tracking and validation",
+    lifespan=lifespan,
+)
 
 origins = [
     "http://localhost:3007",
@@ -551,6 +569,20 @@ app.add_middleware(
 
 # Include routers
 app.include_router(router)
+
+
+@app.get("/")
+async def root():
+    start = time.monotonic()
+    return {
+        "name": "business-use",
+        "version": __version__,
+        "status": "ok",
+        "latency_ms": round((time.monotonic() - start) * 1000, 2),
+        "health": "/health",
+        "docs": "/docs",
+        "openapi": "/openapi.json",
+    }
 
 
 @app.get("/health")

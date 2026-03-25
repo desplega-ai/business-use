@@ -132,10 +132,50 @@ jobs:
       - name: Type check with TypeScript
         run: bun run build
 
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: './sdk-js/pnpm-lock.yaml'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install core dependencies
+        run: cd core && uv sync
+
+      - name: Run E2E tests
+        run: bun run e2e/run.ts
+
   # Summary job that all checks passed
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [check-core, check-sdk-py, check-sdk-js, check-ui]
+    needs: [check-core, check-sdk-py, check-sdk-js, check-ui, e2e]
     steps:
       - run: echo "All formatting, linting, and type checks passed!"
