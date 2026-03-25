@@ -1,0 +1,129 @@
+name: "Business-Use Scanner"
+description: "Scan JS/TS codebases for business-use SDK calls and push flow graphs to backend"
+branding:
+  icon: "search"
+  color: "blue"
+
+inputs:
+  path:
+    description: "Directory to scan for ensure()/act()/assert() calls"
+    required: true
+    default: "./src"
+  mode:
+    description: "Scan mode: dry-run (preview), validate (check graph integrity), push (send to backend)"
+    required: true
+    default: "dry-run"
+  format:
+    description: "Output format for dry-run mode: json or table"
+    required: false
+    default: "table"
+  flow:
+    description: "Filter results to a specific flow name"
+    required: false
+    default: ""
+  url:
+    description: "Backend API URL (required for push mode)"
+    required: false
+    default: ""
+  api-key:
+    description: "Backend API key (required for push mode)"
+    required: false
+    default: ""
+  version:
+    description: "business-use-core version to install (empty = latest)"
+    required: false
+    default: ""
+
+outputs:
+  result-json:
+    description: "Full scan result as JSON"
+    value: ${{ steps.scan.outputs.result-json }}
+  node-count:
+    description: "Total number of extracted nodes"
+    value: ${{ steps.scan.outputs.node-count }}
+  flow-count:
+    description: "Number of distinct flows found"
+    value: ${{ steps.scan.outputs.flow-count }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install business-use-core
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          pip install 'business-use-core[scan]==${{ inputs.version }}'
+        else
+          pip install 'business-use-core[scan]'
+        fi
+
+    - name: Scan and capture outputs
+      id: scan
+      shell: bash
+      run: |
+        FLOW_FLAG=""
+        if [ -n "${{ inputs.flow }}" ]; then
+          FLOW_FLAG="--flow ${{ inputs.flow }}"
+        fi
+
+        # Always capture JSON for outputs
+        RESULT=$(business-use scan ${{ inputs.path }} --dry-run --format json $FLOW_FLAG)
+
+        NODE_COUNT=$(echo "$RESULT" | python3 -c "
+        import json, sys
+        data = json.load(sys.stdin)
+        print(sum(len(n) for n in data.get('flows', {}).values()))
+        ")
+        FLOW_COUNT=$(echo "$RESULT" | python3 -c "
+        import json, sys
+        data = json.load(sys.stdin)
+        print(len(data.get('flows', {})))
+        ")
+
+        EOF_MARKER=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+        echo "result-json<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+        echo "$RESULT" >> "$GITHUB_OUTPUT"
+        echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+
+        echo "node-count=${NODE_COUNT}" >> "$GITHUB_OUTPUT"
+        echo "flow-count=${FLOW_COUNT}" >> "$GITHUB_OUTPUT"
+
+    - name: Execute mode
+      shell: bash
+      env:
+        BUSINESS_USE_URL: ${{ inputs.url }}
+        BUSINESS_USE_API_KEY: ${{ inputs.api-key }}
+      run: |
+        FLOW_FLAG=""
+        if [ -n "${{ inputs.flow }}" ]; then
+          FLOW_FLAG="--flow ${{ inputs.flow }}"
+        fi
+
+        case "${{ inputs.mode }}" in
+          dry-run)
+            business-use scan ${{ inputs.path }} --dry-run --format ${{ inputs.format }} $FLOW_FLAG
+            ;;
+          validate)
+            business-use scan ${{ inputs.path }} --validate $FLOW_FLAG
+            ;;
+          push)
+            if [ -z "${{ inputs.url }}" ]; then
+              echo "::error::url input is required for push mode"
+              exit 1
+            fi
+            if [ -z "${{ inputs.api-key }}" ]; then
+              echo "::error::api-key input is required for push mode"
+              exit 1
+            fi
+            business-use scan ${{ inputs.path }} $FLOW_FLAG
+            ;;
+          *)
+            echo "::error::Invalid mode '${{ inputs.mode }}'. Must be: dry-run, validate, or push"
+            exit 1
+            ;;
+        esac

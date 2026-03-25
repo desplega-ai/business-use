@@ -312,13 +312,32 @@ business-use scan ./src --dry-run --flow checkout
 
 **CI/CD Integration:**
 
-See [`scan-ci-example.yaml`](./scan-ci-example.yaml) for a ready-to-use GitHub Action that:
-- Dry-runs + validates on PRs (no secrets needed)
-- Pushes nodes to backend on merge to main
+Use the [composite GitHub Action](./scan-action/) in your workflows:
 
-Required secrets: `BUSINESS_USE_URL` and `BUSINESS_USE_API_KEY`.
+```yaml
+# .github/workflows/scan.yaml
+steps:
+  - uses: actions/checkout@v4
 
-**Environment variables:**
+  # Preview on PRs
+  - uses: desplega-ai/business-use/scan-action@main
+    with:
+      path: ./src
+      mode: dry-run
+
+  # Push on merge to main
+  - uses: desplega-ai/business-use/scan-action@main
+    with:
+      path: ./src
+      mode: push
+      url: ${{ secrets.BUSINESS_USE_URL }}
+      api-key: ${{ secrets.BUSINESS_USE_API_KEY }}
+```
+
+Modes: `dry-run` (preview), `validate` (check graph integrity), `push` (send to backend).
+See [`scan-ci-example.yaml`](./scan-ci-example.yaml) for a complete workflow with PR comments.
+
+**Environment variables (for local use):**
 ```bash
 export BUSINESS_USE_URL="https://bu.example.com"
 export BUSINESS_USE_API_KEY="your-api-key"
