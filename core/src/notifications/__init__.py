@@ -1,6 +1,6 @@
 """Notifications module — dispatches flow evaluation alerts to configured channels."""
 
-from src.config import NOTIFY_THROTTLE_SECONDS
+from src.config import NOTIFY_THROTTLE_SECONDS, SLACK_WEBHOOK_URL
 from src.notifications.dispatcher import NotificationDispatcher
 
 
@@ -11,5 +11,10 @@ def build_dispatcher() -> NotificationDispatcher:
     are present. Returns a ready-to-use dispatcher.
     """
     dispatcher = NotificationDispatcher(throttle_seconds=NOTIFY_THROTTLE_SECONDS)
-    # Notifiers registered in subsequent phases
+
+    if SLACK_WEBHOOK_URL:
+        from src.notifications.slack import SlackNotifier
+
+        dispatcher.register(SlackNotifier(SLACK_WEBHOOK_URL))
+
     return dispatcher
