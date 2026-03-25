@@ -532,6 +532,17 @@ async def upload_scan(
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[AppState]:
+    from src.config import SENTRY_DSN
+
+    if SENTRY_DSN:
+        try:
+            import sentry_sdk
+
+            sentry_sdk.init(dsn=SENTRY_DSN)
+            log.info("Sentry SDK initialized")
+        except ImportError:
+            log.warning("SENTRY_DSN configured but sentry-sdk not installed")
+
     yield {
         "bus": new_bus(),
     }

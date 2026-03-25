@@ -54,6 +54,9 @@ scan = [
     "tree-sitter-javascript>=0.25.0",
     "tree-sitter-typescript>=0.23.0",
 ]
+notifications = [
+    "sentry-sdk>=2.0.0",
+]
 
 [dependency-groups]
 dev = [
