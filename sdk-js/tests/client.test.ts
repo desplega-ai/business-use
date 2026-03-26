@@ -4,6 +4,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { initialize, act, assert, shutdown } from '../src/client.js';
+import { BatchProcessor } from '../src/batch.js';
+import type { QueuedEvent } from '../src/models.js';
 
 describe('Async Function Rejection', () => {
   beforeEach(async () => {
@@ -213,5 +215,105 @@ describe('Environment Variables', () => {
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('API key not provided')
     );
+  });
+});
+
+describe('act()/assert() timeoutMs and conditions', () => {
+  let enqueueSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'success' }),
+    } as Response);
+
+    enqueueSpy = vi.spyOn(BatchProcessor.prototype, 'enqueue');
+
+    initialize({ apiKey: 'test-key', url: 'http://localhost:9999' });
+  });
+
+  afterEach(async () => {
+    await shutdown(1000);
+    vi.restoreAllMocks();
+  });
+
+  it('act() should translate timeoutMs to conditions', () => {
+    act({
+      id: 'test_event',
+      flow: 'test_flow',
+      runId: 'run_123',
+      data: { test: true },
+      timeoutMs: 5000,
+    });
+
+    expect(enqueueSpy).toHaveBeenCalledOnce();
+    const event = enqueueSpy.mock.calls[0][0] as QueuedEvent;
+    expect(event.conditions).toEqual([{ timeout_ms: 5000 }]);
+  });
+
+  it('assert() should translate timeoutMs to conditions', () => {
+    assert({
+      id: 'test_event',
+      flow: 'test_flow',
+      runId: 'run_123',
+      data: { test: true },
+      validator: (data) => data.test === true,
+      timeoutMs: 30000,
+    });
+
+    expect(enqueueSpy).toHaveBeenCalledOnce();
+    const event = enqueueSpy.mock.calls[0][0] as QueuedEvent;
+    expect(event.conditions).toEqual([{ timeout_ms: 30000 }]);
+  });
+
+  it('explicit conditions should take precedence over timeoutMs', () => {
+    const explicitConditions = [{ timeout_ms: 9999 }];
+
+    act({
+      id: 'test_event',
+      flow: 'test_flow',
+      runId: 'run_123',
+      data: { test: true },
+      timeoutMs: 5000,
+      conditions: explicitConditions,
+    });
+
+    expect(enqueueSpy).toHaveBeenCalledOnce();
+    const event = enqueueSpy.mock.calls[0][0] as QueuedEvent;
+    expect(event.conditions).toEqual([{ timeout_ms: 9999 }]);
+  });
+
+  it('act() should pass through description and additional_meta', () => {
+    act({
+      id: 'test_event',
+      flow: 'test_flow',
+      runId: 'run_123',
+      data: { test: true },
+      description: 'A test event',
+      additional_meta: { source: 'test' },
+    });
+
+    expect(enqueueSpy).toHaveBeenCalledOnce();
+    const event = enqueueSpy.mock.calls[0][0] as QueuedEvent;
+    expect(event.description).toBe('A test event');
+    expect(event.additional_meta).toEqual({ source: 'test' });
+  });
+
+  it('act() without timeoutMs or conditions should leave conditions undefined', () => {
+    act({
+      id: 'test_event',
+      flow: 'test_flow',
+      runId: 'run_123',
+      data: { test: true },
+    });
+
+    expect(enqueueSpy).toHaveBeenCalledOnce();
+    const event = enqueueSpy.mock.calls[0][0] as QueuedEvent;
+    expect(event.conditions).toBeUndefined();
   });
 });

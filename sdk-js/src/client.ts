@@ -255,8 +255,13 @@ export function act<TData extends Record<string, any> = Record<string, any>>(opt
   depIds?: string[] | (() => string[]);
   filter?: (_data: TData, _ctx: Ctx) => boolean;
   timeoutMs?: number;
+  conditions?: NodeCondition[] | (() => NodeCondition[]);
+  description?: string;
+  additional_meta?: Record<string, any>;
 }): void {
-  ensure(options);
+  const { timeoutMs, ...rest } = options;
+  const conditions = rest.conditions ?? (timeoutMs ? [{ timeout_ms: timeoutMs }] : undefined);
+  ensure({ ...rest, conditions });
 }
 
 /**
@@ -272,8 +277,13 @@ export function assert<TData extends Record<string, any> = Record<string, any>>(
   depIds?: string[] | (() => string[]);
   filter?: (_data: TData, _ctx: Ctx) => boolean;
   timeoutMs?: number;
+  conditions?: NodeCondition[] | (() => NodeCondition[]);
+  description?: string;
+  additional_meta?: Record<string, any>;
 }): void {
-  ensure(options);
+  const { timeoutMs, ...rest } = options;
+  const conditions = rest.conditions ?? (timeoutMs ? [{ timeout_ms: timeoutMs }] : undefined);
+  ensure({ ...rest, conditions });
 }
 
 /**
